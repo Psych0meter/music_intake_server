@@ -1,0 +1,12 @@
+beets
+pyacoustid
+requests
+flask
+mutagen
+beautifulsoup4
+
+# Optional: only needed if you enable the lyrics-transcription fallback
+# (GENIUS_ACCESS_TOKEN set in config/secrets.env). Not installed by
+# default since it's a large dependency (ctranslate2) most setups won't
+# need - install manually if you want it:
+#   pip install faster-whisper

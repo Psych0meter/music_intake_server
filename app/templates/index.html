@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Music Intake Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    
+    th[data-sort] { cursor: pointer; user-select: none; }
+    th[data-sort]:hover { background-color: #f3f4f6; }
+    th.asc::after { content: ' \25B2'; font-size: 0.7em; color: #6b7280; }
+    th.desc::after { content: ' \25BC'; font-size: 0.7em; color: #6b7280; }
+    
+    .hide-unrecognized .row-unrecognized { display: none !important; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800 hide-unrecognized" id="body-container">
+
+  <div class="w-full px-6 py-8">
+    
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-200 pb-5 gap-4">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Music Intake Review</h1>
+        <p class="text-sm text-gray-500 mt-1">Verify metadata fingerprints and clear the incoming processing queue.</p>
+      </div>
+      
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative">
+          <input type="text" id="text-filter" placeholder="Filter rows..." 
+                 class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-48 px-3 py-2 shadow-sm">
+        </div>
+
+        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 shadow-sm transition">
+          <input type="checkbox" id="toggle-unrecognized" class="rounded text-indigo-600 focus:ring-indigo-500">
+          <span>Show Unrecognized</span>
+        </label>
+
+        <div class="relative inline-block text-left">
+          <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none">
+            Columns ▾
+          </button>
+          <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+            <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
+          </div>
+        </div>
+
+        <button onclick="purgeDB()" class="text-red-600 hover:text-white hover:bg-red-600 border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
+          Purge Queue
+        </button>
+
+        <div class="bg-indigo-50 text-indigo-700 font-medium px-4 py-2 rounded-lg text-sm border border-indigo-100 shadow-sm">
+          Pending: <span class="font-bold" id="pending-count">{{ total_count }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="scan-bar-wrap" class="mb-6 hidden">
+      <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+        <span id="scan-label">Scanning...</span>
+        <span id="scan-percent">0%</span>
+      </div>
+      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div id="scan-bar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <div id="empty-state" class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm {% if rows %}hidden{% endif %}">
+      <p class="text-gray-500 text-lg">🎉 The intake queue is completely clear!</p>
+    </div>
+
+    {% if rows %}
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden hidden md:block" style="min-height: 50vh;" id="main-table-container">
+      <div class="overflow-x-auto">
+        <table class="w-full table-auto text-left border-collapse" id="review-table">
+          <thead>
+            <tr class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
+              <th class="px-4 py-4 col-source" data-sort="str" data-col="0">Source File / Path</th>
+              <th class="px-4 py-4 col-preview" data-col="1">Preview</th>
+              <th class="px-4 py-4 col-songrec" data-sort="str" data-col="2">SongRec</th>
+              <th class="px-4 py-4 col-acoustid" data-sort="str" data-col="3">AcoustID</th>
+              <th class="px-4 py-4 col-title" data-sort="str" data-col="4">Track Title</th>
+              <th class="px-4 py-4 col-artist" data-sort="str" data-col="5">Artist</th>
+              <th class="px-4 py-4 col-album" data-sort="str" data-col="6">Album</th>
+              <th class="px-4 py-4 col-size text-center" data-sort="num" data-col="7">Size</th>
+              <th class="px-4 py-4 col-length text-center" data-sort="num" data-col="8">Length</th>
+              <th class="px-4 py-4 col-confidence text-center" data-sort="num" data-col="9">Confidence</th>
+              <th class="px-4 py-4 col-actions text-right" data-col="10">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr id="row-{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }}">
+
+              <td class="px-4 py-4 align-top col-source" data-val="{{ row.relative_path|lower }}">
+                <span class="text-sm font-medium text-gray-900 block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
+                <span class="text-[11px] text-gray-400 block break-all font-mono max-w-[150px] mt-0.5" title="Absolute: {{ row.filepath }}">{{ row.relative_path }}</span>
+                
+                {% if row.error %}
+                  <span class="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200" title="{{ row.error }}">⚠ Read Error</span>
+                  <span class="text-[10px] text-red-600 block mt-1 max-w-[150px] break-all font-mono">{{ row.error }}</span>
+                {% endif %}
+                
+                {% if row.duplicates %}
+                  <div class="mt-3 border-l-2 border-rose-300 pl-2">
+                    <span class="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Exact Duplicates</span>
+                    <ul class="mt-1 space-y-1">
+                    {% for dup in row.duplicates %}
+                      <li id="row-{{ dup.id }}" class="flex items-center justify-between gap-2 bg-rose-50 px-2 py-1 rounded border border-rose-100">
+                        <span class="text-xs text-rose-800 break-all truncate max-w-[120px]" title="{{ dup.filepath }}">{{ dup.filepath.split('/')[-1] }}</span>
+                        <button onclick="act({{ dup.id }}, 'delete')" title="Delete File" class="text-rose-500 hover:text-white hover:bg-rose-500 transition-colors p-1 bg-white rounded shadow-sm border border-rose-200 shrink-0">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                      </li>
+                    {% endfor %}
+                    </ul>
+                  </div>
+                {% endif %}
+              </td>
+
+              <td class="px-4 py-4 align-top col-preview" data-val="">
+                {% if row.error %}
+                  <span class="text-xs text-gray-400 italic">Unreadable</span>
+                {% else %}
+                  <audio controls preload="none" class="h-8 w-24 md:w-32">
+                    <source src="{{ url_for('audio', item_id=row.id) }}">
+                  </audio>
+                {% endif %}
+              </td>
+
+              <td class="px-4 py-4 align-top text-sm col-songrec" data-val="{{ row.sr_artist or '' }}">
+                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.sr_artist or '-' }}</span>
+                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.sr_title or '-' }}</span>
+              </td>
+
+              <td class="px-4 py-4 align-top text-sm col-acoustid" data-val="{{ row.ac_artist or '' }}">
+                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.ac_artist or '-' }}</span>
+                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.ac_title or '-' }}</span>
+                <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                  {{ row.ac_score_human }}
+                </span>
+              </td>
+
+              <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
+                <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+              </td>
+
+              <td class="px-4 py-4 align-top col-artist" data-val="{{ row.artist or '' }}">
+                <input type="text" id="artist-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Unknown Artist" {{ 'disabled' if row.error }}
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+              </td>
+
+              <td class="px-4 py-4 align-top col-album" data-val="{{ row.album or '' }}">
+                <input type="text" id="album-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Unknown Album" {{ 'disabled' if row.error }}
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40 text-gray-600">
+              </td>
+
+              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-size" data-val="{{ row.filesize or 0 }}">
+                {{ row.size_human }}
+              </td>
+
+              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-length" data-val="{{ row.duration or 0 }}">
+                {{ row.duration_human }}
+              </td>
+
+              <td class="px-4 py-4 align-top text-center whitespace-nowrap col-confidence" data-val="{{ row.confidence }}">
+                {% if row.error %}
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">0% Error</span>
+                {% elif row.confidence >= 80 %}
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">{{ row.confidence }}%</span>
+                {% elif row.confidence >= 50 %}
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">{{ row.confidence }}%</span>
+                {% else %}
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">{{ row.confidence }}%</span>
+                {% endif %}
+              </td>
+
+              <td class="px-4 py-4 align-top text-right whitespace-nowrap text-sm col-actions" data-val="">
+                <div class="flex flex-col gap-2">
+                  <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30 disabled:hover:bg-emerald-600">Approve</button>
+                  <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
+                </div>
+              </td>
+
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="md:hidden space-y-4" id="mobile-cards-container">
+      {% for row in rows %}
+      <div id="mrow-{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }}">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-gray-900 break-words">{{ row.filepath.split('/')[-1] }}</p>
+            <p class="text-[11px] text-gray-400 font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
+            <p class="text-xs text-gray-400 mt-1">{{ row.size_human }} · {{ row.duration_human }}</p>
+          </div>
+        </div>
+        
+        {% if row.duplicates %}
+          <div class="mb-3 border border-rose-200 bg-rose-50 rounded p-2">
+             <span class="text-[10px] font-bold text-rose-600 uppercase">Exact Duplicates</span>
+             <ul class="mt-1 space-y-1">
+             {% for dup in row.duplicates %}
+               <li id="mrow-{{ dup.id }}" class="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded shadow-sm border border-rose-100">
+                 <span class="text-xs text-rose-800 truncate">{{ dup.filepath.split('/')[-1] }}</span>
+                 <button onclick="act({{ dup.id }}, 'delete')" class="text-rose-500 hover:text-rose-700"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+               </li>
+             {% endfor %}
+             </ul>
+          </div>
+        {% endif %}
+
+        {% if row.error %}
+          <div class="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-mono break-all">
+            <strong>Read Error:</strong> {{ row.error }}
+          </div>
+        {% else %}
+          <audio controls preload="none" class="w-full h-8 mb-3"><source src="{{ url_for('audio', item_id=row.id) }}"></audio>
+        {% endif %}
+
+        <div class="space-y-2 mb-3">
+          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30">Approve</button>
+          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">Reject</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+    async function act(id, action, isMobile) {
+      if (action === 'approve') {
+        const prefix = isMobile ? '-m-' : '-';
+        const artist = document.getElementById(`artist${prefix}${id}`).value.trim();
+        const title = document.getElementById(`title${prefix}${id}`).value.trim();
+        const album = document.getElementById(`album${prefix}${id}`).value.trim();
+        try {
+          await fetch(`/api/edit/${id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ artist, title, album })
+          });
+        } catch (err) {}
+      }
+
+      const res = await fetch(`/api/${action}/${id}`, { method: "POST" });
+      if (res.ok) {
+        const rowMain = document.getElementById(`row-${id}`);
+        const rowMobile = document.getElementById(`mrow-${id}`);
+        if (rowMain) rowMain.remove();
+        if (rowMobile) rowMobile.remove();
+
+        const countBadge = document.getElementById('pending-count');
+        if (countBadge) {
+           let num = parseInt(countBadge.innerText) || 0;
+           if (num > 0) {
+             num -= 1;
+             countBadge.innerText = num;
+             if (num === 0) showEmptyState();
+           }
+        }
+      } else {
+        const data = await res.json();
+        alert(data.error || "Action failed");
+      }
+    }
+
+    async function purgeDB() {
+      if (!confirm("Are you sure you want to purge all pending tracks from the database? This will safely drop tracking points so the daemon can run a fresh rescan loop.")) return;
+      
+      try {
+        const res = await fetch('/api/purge', { method: 'POST' });
+        if (res.ok) {
+          document.querySelectorAll('.item-row').forEach(row => row.remove());
+          const countBadge = document.getElementById('pending-count');
+          if (countBadge) countBadge.innerText = '0';
+          showEmptyState();
+        } else {
+          alert("Failed to purge target database entries.");
+        }
+      } catch (err) {
+        alert("Network communication error.");
+      }
+    }
+
+    function showEmptyState() {
+      const tableContainer = document.getElementById('main-table-container');
+      const mobileContainer = document.getElementById('mobile-cards-container');
+      const emptyState = document.getElementById('empty-state');
+      
+      if (tableContainer) tableContainer.classList.add('hidden');
+      if (mobileContainer) mobileContainer.classList.add('hidden');
+      if (emptyState) emptyState.classList.remove('hidden');
+    }
+
+    const filterInput = document.getElementById('text-filter');
+    if (filterInput) {
+      filterInput.addEventListener('input', (e) => {
+        const term = e.target.value.toLowerCase();
+        document.querySelectorAll('.item-row').forEach(row => {
+          if (row.innerText.toLowerCase().includes(term)) {
+            row.style.display = '';
+          } else {
+            row.style.display = 'none';
+          }
+        });
+      });
+    }
+
+    async function pollScanStatus() {
+      try {
+        const res = await fetch('/api/scan-status');
+        const data = await res.json();
+        const wrap = document.getElementById('scan-bar-wrap');
+        const bar = document.getElementById('scan-bar');
+        const label = document.getElementById('scan-label');
+        const percent = document.getElementById('scan-percent');
+
+        if (data.scanning) {
+          wrap.classList.remove('hidden');
+          bar.style.width = `${data.percent}%`;
+          percent.textContent = `${data.percent}% (${data.processed}/${data.total})`;
+          label.textContent = data.current_file ? `Scanning: ${data.current_file.split('/').pop()}` : 'Scanning...';
+        } else {
+          wrap.classList.add('hidden');
+        }
+      } catch (err) {}
+    }
+    pollScanStatus();
+    setInterval(pollScanStatus, 2000);
+
+    const toggleUnrecognized = document.getElementById('toggle-unrecognized');
+    if (toggleUnrecognized) {
+      toggleUnrecognized.addEventListener('change', (e) => {
+        const body = document.getElementById('body-container');
+        if (e.target.checked) body.classList.remove('hide-unrecognized');
+        else body.classList.add('hide-unrecognized');
+      });
+    }
+
+    const columns = [
+      { id: 'col-source', label: 'Source File', default: true },
+      { id: 'col-preview', label: 'Preview', default: true },
+      { id: 'col-songrec', label: 'SongRec', default: false },
+      { id: 'col-acoustid', label: 'AcoustID', default: false },
+      { id: 'col-title', label: 'Title', default: true },
+      { id: 'col-artist', label: 'Artist', default: true },
+      { id: 'col-album', label: 'Album', default: true },
+      { id: 'col-size', label: 'Size', default: true },
+      { id: 'col-length', label: 'Length', default: true },
+      { id: 'col-confidence', label: 'Confidence', default: true },
+      { id: 'col-actions', label: 'Actions', default: true }
+    ];
+
+    const savedCols = JSON.parse(localStorage.getItem('colMemory')) || {};
+    columns.forEach(col => {
+      if (savedCols[col.id] !== undefined) col.default = savedCols[col.id];
+    });
+
+    const colCheckboxesContainer = document.getElementById('col-checkboxes');
+    
+    function applyColumnVisibility() {
+      const stateToSave = {};
+      columns.forEach(col => {
+        stateToSave[col.id] = col.default;
+        document.querySelectorAll(`.${col.id}`).forEach(el => {
+          el.style.display = col.default ? '' : 'none';
+        });
+      });
+      localStorage.setItem('colMemory', JSON.stringify(stateToSave));
+    }
+
+    if (colCheckboxesContainer) {
+      columns.forEach(col => {
+        const label = document.createElement('label');
+        label.className = "flex items-center gap-2 cursor-pointer";
+        label.innerHTML = `<input type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500" ${col.default ? 'checked' : ''}> <span class="text-sm">${col.label}</span>`;
+        label.querySelector('input').addEventListener('change', (e) => {
+          col.default = e.target.checked;
+          applyColumnVisibility();
+        });
+        colCheckboxesContainer.appendChild(label);
+      });
+      applyColumnVisibility();
+    }
+
+    const table = document.getElementById('review-table');
+    if (table) {
+      const headers = table.querySelectorAll('th[data-sort]');
+      const tbody = table.querySelector('tbody');
+
+      headers.forEach(header => {
+        header.addEventListener('click', () => {
+          const colIndex = header.dataset.col;
+          const type = header.dataset.sort;
+          const isAsc = header.classList.contains('asc');
+          
+          headers.forEach(h => { h.classList.remove('asc', 'desc'); });
+          header.classList.add(isAsc ? 'desc' : 'asc');
+
+          const rows = Array.from(tbody.querySelectorAll('tr.item-row'));
+
+          rows.sort((a, b) => {
+            const aCell = a.children[colIndex];
+            const bCell = b.children[colIndex];
+            let aVal = aCell ? aCell.dataset.val || '' : '';
+            let bVal = bCell ? bCell.dataset.val || '' : '';
+
+            if (type === 'num') {
+              return isAsc ? (parseFloat(bVal) || 0) - (parseFloat(aVal) || 0) : (parseFloat(aVal) || 0) - (parseFloat(bVal) || 0);
+            } else {
+              return isAsc ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
+            }
+          });
+          rows.forEach(row => tbody.appendChild(row));
+        });
+      });
+    }
+  </script>
+</body>
+</html>

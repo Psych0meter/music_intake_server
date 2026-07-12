@@ -1,0 +1,9 @@
+# One absolute path per line. Lines starting with # are ignored.
+# Re-read every scan cycle (~15s) - no restart needed to add/remove a folder.
+#
+# Point these at whatever subfolders of your NAS source mount you want
+# scanned. Paths must exist and be readable by the musicintake user.
+#
+# Example:
+# /mnt/nas-source/NewMusic
+# /mnt/nas-source/ToSort

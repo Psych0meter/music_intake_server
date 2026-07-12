@@ -1,0 +1,8 @@
+config/secrets.env
+config/scan_roots.txt
+*.sqlite3
+*.log
+__pycache__/
+*.pyc
+.venv/
+venv/

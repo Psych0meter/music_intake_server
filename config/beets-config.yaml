@@ -1,0 +1,41 @@
+directory: /mnt/nas-intake/library
+library: /opt/music-intake/db/beets-library.db
+
+import:
+    move: yes
+    write: yes
+    copy: no
+    autotag: yes
+    quiet_fallback: skip
+    incremental: yes
+    log: /opt/music-intake/db/beets-import.log
+
+paths:
+    default: $albumartist/$album%aunique{}/$track $title
+    singleton: Non-Album/$artist/$title
+    comp: Compilations/$album%aunique{}/$track $title
+
+plugins: chroma fetchart lyrics replaygain edit scrub
+
+acoustid:
+    apikey: ${ACOUSTID_API_KEY}
+
+fetchart:
+    auto: yes
+    sources:
+      - filesystem
+      - coverart
+      - itunes
+      - amazon
+      - albumart
+
+lyrics:
+    auto: yes
+
+replaygain:
+    backend: ffmpeg
+
+match:
+    strong_rec_thresh: 0.10
+    medium_rec_thresh: 0.25
+    rec_gap_thresh: 0.25
