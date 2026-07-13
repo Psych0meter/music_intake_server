@@ -44,32 +44,25 @@ function update_script() {
     exit
   fi
 
-
   msg_info "Updating Container OS"
   apt_update_safe
   $STD apt-get -o Dpkg::Options::="--force-confold" -y dist-upgrade
   msg_ok "Updated Container OS"
-
 
   msg_info "Stopping Services"
   systemctl stop music-recognize.service
   systemctl stop music-review-ui.service
   msg_ok "Stopped Services"
 
-
   if [[ ! -d /opt/music-intake-src/.git ]]; then
     msg_error "Source checkout missing"
     exit
   fi
 
-
   msg_info "Updating ${APP} Source"
-
   cd /opt/music-intake-src
-
   INSTALLED_BRANCH=$(cat /opt/music-intake_version.txt 2>/dev/null | cut -d'@' -f1)
   INSTALLED_BRANCH="${INSTALLED_BRANCH:-main}"
-
   git fetch origin
 
   if git show-ref --verify --quiet "refs/remotes/origin/${INSTALLED_BRANCH}"; then
@@ -81,30 +74,36 @@ function update_script() {
     git reset --hard origin/main
     INSTALLED_BRANCH="main"
   fi
-
   msg_ok "Updated source (branch: ${INSTALLED_BRANCH})"
 
-
   msg_info "Deploying Application Files"
-
   rm -rf /opt/music-intake/app/*
   rm -rf /opt/music-intake/pipeline/*
+  rm -rf /opt/music-intake/migrations/*
 
   cp -r app/* /opt/music-intake/app/
   cp -r pipeline/* /opt/music-intake/pipeline/
+  cp -r migrations/* /opt/music-intake/migrations/
+  cp migrate.py /opt/music-intake/migrate.py
+
+  # Refresh systemd configuration files if changes were tracked in the repo
+  if [ -d "services" ]; then
+    cp services/*.service services/*.timer /etc/systemd/system/ 2>/dev/null || true
+    systemctl daemon-reload
+  fi
 
   chown -R musicintake:musicintake /opt/music-intake
-
   msg_ok "Application Files Updated"
 
+  msg_info "Running Database Migrations"
+  # Run the migrations using the application venv binary to apply pending schemas
+  /opt/music-intake/venv/bin/python3 /opt/music-intake/migrate.py
+  msg_ok "Database Schema Synchronized"
 
   msg_info "Starting Services"
-
   systemctl start music-recognize.service
   systemctl start music-review-ui.service
-
   msg_ok "Services Started"
-
 
   msg_ok "Update Successful"
   exit
