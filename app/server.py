@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import math
 import re
 import shutil
 import sqlite3
@@ -37,40 +38,15 @@ def allowed_roots():
     return load_scan_roots() + [APPROVED.resolve(), REJECTED.resolve()]
 
 
-def migrate_schema(conn):
-    """Parity system mapping required columns dynamically for seamless expansion."""
-    required_columns = {
-        "filesize": "INTEGER",
-        "duration": "REAL",
-        "filehash": "TEXT",
-        "sr_artist": "TEXT",
-        "sr_title": "TEXT",
-        "sr_album": "TEXT",
-        "ac_artist": "TEXT",
-        "ac_title": "TEXT",
-        "ac_score": "REAL",
-        "gn_artist": "TEXT",
-        "gn_title": "TEXT",
-        "agreement": "REAL",
-        "error": "TEXT"
-    }
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(queue)")}
-    for col_name, col_type in required_columns.items():
-        if col_name not in cols:
-            conn.execute(f"ALTER TABLE queue ADD COLUMN {col_name} {col_type}")
-    conn.commit()
-
-
 def get_db():
+    """Assumes migrations have already been applied by scripts/migrate.py
+    (run manually, or automatically via the music-migrate.service systemd
+    unit before this service starts) - this just opens a connection,
+    it does not create or alter any schema itself."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.executescript(
-        "CREATE TABLE IF NOT EXISTS scan_status ("
-        "id INTEGER PRIMARY KEY CHECK (id = 1), "
-        "total INTEGER DEFAULT 0, processed INTEGER DEFAULT 0, "
-        "current_file TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
-    )
-    migrate_schema(conn)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
 
@@ -78,51 +54,9 @@ def sanitize_filename(name):
     if not name:
         return ""
     sanitized = re.sub(r'[\/\\\x00]', '_', str(name).strip())
-    return sanitized or "_"
-
-
-def compute_filehash(filepath, chunk_size=1024 * 1024):
-    h = hashlib.sha256()
-    with open(filepath, "rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def probe_duration(filepath):
-    try:
-        audio = mutagen.File(filepath)
-        return audio.info.length if audio and audio.info else None
-    except Exception:
-        return None
-
-
-def ensure_metadata(conn, row):
-    if row["error"]:
-        return row
-
-    filepath = Path(row["filepath"])
-    if not filepath.is_file():
-        return row
-
-    updates = {}
-    if row["filesize"] is None:
-        updates["filesize"] = filepath.stat().st_size
-    if row["duration"] is None:
-        updates["duration"] = probe_duration(filepath)
-    if row["filehash"] is None:
-        updates["filehash"] = compute_filehash(filepath)
-
-    if updates:
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        conn.execute(
-            f"UPDATE queue SET {set_clause} WHERE id = ?",
-            (*updates.values(), row["id"])
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM queue WHERE id = ?", (row["id"],)).fetchone()
-
-    return row
+    if sanitized in (".", "..") or sanitized.startswith(".."):
+        return "_"
+    return sanitized
 
 
 def human_size(num_bytes):
@@ -220,26 +154,80 @@ def _run_batch(conn, ids, fn):
 
 @app.route("/")
 def index():
-    conn = get_db()
-    raw_rows = conn.execute(
-        "SELECT * FROM queue WHERE status = 'pending' ORDER BY confidence ASC"
-    ).fetchall()
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    search_query = request.args.get("q", "").strip()
+    show_unrecognized = request.args.get("unrecognized", "0") == "1"
+    
+    # Sorting Configuration Parameters
+    sort_by = request.args.get("sort", "confidence")
+    order = request.args.get("order", "asc")
 
-    rows = [ensure_metadata(conn, r) for r in raw_rows]
+    if page < 1:
+        page = 1
+
+    conn = get_db()
+
+    # Dynamic SQL Condition Construction
+    query_conditions = ["status = 'pending'"]
+    query_params = []
+
+    if not show_unrecognized:
+        query_conditions.append("confidence > 0")
+
+    if search_query:
+        query_conditions.append(
+            "(filepath LIKE ? OR artist LIKE ? OR title LIKE ? OR album LIKE ?)"
+        )
+        like_param = f"%{search_query}%"
+        query_params.extend([like_param, like_param, like_param, like_param])
+
+    where_clause = " WHERE " + " AND ".join(query_conditions)
+
+    # Secure Parameter Columns Whitelist to stop structural SQL Injection vectors dead
+    sort_map = {
+        "source": "filepath",
+        "songrec": "sr_artist",
+        "acoustid": "ac_artist",
+        "genius": "gn_artist",
+        "title": "title",
+        "artist": "artist",
+        "album": "album",
+        "size": "filesize",
+        "length": "duration",
+        "confidence": "confidence"
+    }
+    db_column = sort_map.get(sort_by, "confidence")
+    db_order = "ASC" if order.lower() == "asc" else "DESC"
+
+    # Total matching entries calculation bound
+    total_count = conn.execute(
+        f"SELECT COUNT(*) FROM queue {where_clause}", query_params
+    ).fetchone()[0]
+
+    total_pages = max(1, math.ceil(total_count / per_page))
+    if page > total_pages:
+        page = total_pages
+    offset = (page - 1) * per_page
+
+    # High Speed Executable query block incorporating explicit sort targets
+    final_query = f"""
+        SELECT * FROM queue 
+        {where_clause} 
+        ORDER BY {db_column} {db_order} 
+        LIMIT ? OFFSET ?
+    """
+    raw_rows = conn.execute(final_query, query_params + [per_page, offset]).fetchall()
 
     enriched = []
-    for r in rows:
+    for r in raw_rows:
         d = dict(r)
         d["size_human"] = human_size(r["filesize"])
         d["duration_human"] = human_duration(r["duration"])
         d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
         d["error"] = r["error"]
         d["relative_path"] = relative_source(r["filepath"])
-
-        if r["agreement"] is None:
-            d["agreement_human"] = "-"
-        else:
-            d["agreement_human"] = f"{r['agreement'] * 100:.0f}%"
+        d["agreement_human"] = f"{r['agreement'] * 100:.0f}%" if r["agreement"] is not None else "-"
         enriched.append(d)
 
     grouped_rows = []
@@ -256,10 +244,19 @@ def index():
         else:
             grouped_rows.append(r)
 
+    conn.close()
+
     return render_template(
         "index.html",
         rows=grouped_rows,
-        total_count=len(enriched),
+        total_count=total_count,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        search_query=search_query,
+        show_unrecognized=show_unrecognized,
+        sort_by=sort_by,
+        order=order,
         scan_roots=[str(p) for p in load_scan_roots()],
     )
 
@@ -268,40 +265,29 @@ def index():
 def scan_status():
     conn = get_db()
     row = conn.execute("SELECT * FROM scan_status WHERE id = 1").fetchone()
+    conn.close()
     if not row or not row["total"]:
         return jsonify({"total": 0, "processed": 0, "percent": 100, "current_file": None, "scanning": False})
-
     total = row["total"]
     processed = row["processed"] or 0
-    percent = int((processed / total) * 100) if total else 100
     return jsonify({
-        "total": total,
-        "processed": processed,
-        "percent": percent,
-        "current_file": row["current_file"],
-        "scanning": processed < total
+        "total": total, "processed": processed, "percent": int((processed / total) * 100) if total else 100,
+        "current_file": row["current_file"], "scanning": processed < total
     })
-
-
-@app.route("/api/scan-roots")
-def scan_roots_status():
-    return jsonify({"roots": [str(p) for p in load_scan_roots()]})
 
 
 @app.route("/api/audio/<int:item_id>")
 def audio(item_id):
     conn = get_db()
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    conn.close()
     if not row or row["error"]:
         abort(404)
-
     src = Path(row["filepath"]).resolve()
-    roots = allowed_roots()
-    if not any(root in src.parents or root == src for root in roots):
+    if not any(root in src.parents or root == src for root in allowed_roots()):
         abort(403)
     if not src.is_file():
         abort(404)
-
     return send_file(src, conditional=True)
 
 
@@ -309,48 +295,63 @@ def audio(item_id):
 def approve(item_id):
     conn = get_db()
     ok, err = _approve_one(conn, item_id)
-    if not ok:
-        return jsonify({"error": err}), 400
-    return jsonify({"status": "approved"})
+    conn.close()
+    return jsonify({"status": "approved"}) if ok else (jsonify({"error": err}), 400)
 
 
 @app.route("/api/reject/<int:item_id>", methods=["POST"])
 def reject(item_id):
     conn = get_db()
     ok, err = _reject_one(conn, item_id)
-    if not ok:
-        return jsonify({"error": err}), 404
-    return jsonify({"status": "rejected"})
+    conn.close()
+    return jsonify({"status": "rejected"}) if ok else (jsonify({"error": err}), 404)
 
 
 @app.route("/api/rescan/<int:item_id>", methods=["POST"])
 def rescan(item_id):
     conn = get_db()
     ok, err = _rescan_one(conn, item_id)
-    if not ok:
-        return jsonify({"error": err}), 404
-    return jsonify({"status": "rescan_queued"})
+    conn.close()
+    return jsonify({"status": "rescan_queued"}) if ok else (jsonify({"error": err}), 404)
 
 
 @app.route("/api/approve-batch", methods=["POST"])
 def approve_batch():
-    ids = (request.get_json() or {}).get("ids", [])
+    payload = request.get_json() or {}
+    ids = payload.get("ids", [])
+    edits = payload.get("edits", {})
     conn = get_db()
-    return jsonify({"results": _run_batch(conn, ids, _approve_one)})
+    try:
+        for item_id, fields in edits.items():
+            conn.execute(
+                "UPDATE queue SET artist = ?, title = ?, album = ? WHERE id = ?",
+                (fields.get("artist"), fields.get("title"), fields.get("album"), int(item_id))
+            )
+        conn.commit()
+        results = _run_batch(conn, ids, _approve_one)
+        return jsonify({"results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
 
 @app.route("/api/reject-batch", methods=["POST"])
 def reject_batch():
     ids = (request.get_json() or {}).get("ids", [])
     conn = get_db()
-    return jsonify({"results": _run_batch(conn, ids, _reject_one)})
+    results = _run_batch(conn, ids, _reject_one)
+    conn.close()
+    return jsonify({"results": results})
 
 
 @app.route("/api/rescan-batch", methods=["POST"])
 def rescan_batch():
     ids = (request.get_json() or {}).get("ids", [])
     conn = get_db()
-    return jsonify({"results": _run_batch(conn, ids, _rescan_one)})
+    results = _run_batch(conn, ids, _rescan_one)
+    conn.close()
+    return jsonify({"results": results})
 
 
 @app.route("/api/delete/<int:item_id>", methods=["POST"])
@@ -358,17 +359,18 @@ def delete_item(item_id):
     conn = get_db()
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
+        conn.close()
         return jsonify({"error": "not found"}), 404
-
-    src = Path(row["filepath"])
     try:
+        src = Path(row["filepath"])
         if src.exists():
             src.unlink()
     except Exception as e:
-        return jsonify({"error": f"Failed to permanently delete file: {str(e)}"}), 500
-
+        conn.close()
+        return jsonify({"error": str(e)}), 500
     conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
     conn.commit()
+    conn.close()
     return jsonify({"status": "deleted"})
 
 
@@ -382,17 +384,20 @@ def purge_queue():
         return jsonify({"status": "purged"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
 
 @app.route("/api/edit/<int:item_id>", methods=["POST"])
 def edit(item_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     conn = get_db()
     conn.execute(
         "UPDATE queue SET artist = ?, title = ?, album = ? WHERE id = ?",
         (data.get("artist"), data.get("title"), data.get("album"), item_id)
     )
     conn.commit()
+    conn.close()
     return jsonify({"status": "updated"})
 
 

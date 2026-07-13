@@ -5,7 +5,7 @@ import:
     move: yes
     write: yes
     copy: no
-    autotag: yes
+    autotag: no
     quiet_fallback: skip
     incremental: yes
     log: /opt/music-intake/db/beets-import.log
