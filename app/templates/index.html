@@ -64,6 +64,7 @@
       </div>
     </div>
 
+    <!-- Scan Progress Bar Section -->
     <div id="scan-bar-wrap" class="mb-6 hidden">
       <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
         <span id="scan-label" class="font-medium">Scanning...</span>
@@ -274,6 +275,7 @@
 
   <script>
     const selectedIds = new Set();
+    let isPaused = false;
 
     // Restore filter states from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -459,28 +461,57 @@
       if (res.ok) window.location.reload();
     }
 
+    // Unify status monitoring and visualization (Fixes 'data' undefined error)
     async function pollScanStatus() {
       try {
         const res = await fetch('/api/scan-status');
-        const data = await res.json();
+        if (!res.ok) return;
+        const scanData = await res.json();
+        
         const wrap = document.getElementById('scan-bar-wrap');
         const bar = document.getElementById('scan-bar');
         const label = document.getElementById('scan-label');
         const percent = document.getElementById('scan-percent');
+        const pauseBtn = document.getElementById('pause-btn');
 
-        if (data.scanning) {
+        if (!wrap || !bar || !percent || !label || !pauseBtn) return;
+
+        if (scanData.scanning || scanData.is_paused) {
           wrap.classList.remove('hidden');
-          bar.style.width = `${data.percent}%`;
-          percent.textContent = `${data.percent}% (${data.processed}/${data.total})`;
-          label.textContent = data.current_file ? `Scanning: ${data.current_file.split('/').pop()}` : 'Scanning...';
+          bar.style.width = `${scanData.percent}%`;
+          percent.textContent = `${scanData.percent}% (${scanData.processed}/${scanData.total})`;
+          
+          if (scanData.is_paused) {
+            isPaused = true;
+            pauseBtn.textContent = 'Resume';
+            label.textContent = `⏸ Paused: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
+            bar.classList.replace('bg-indigo-500', 'bg-amber-400');
+          } else {
+            isPaused = false;
+            pauseBtn.textContent = 'Pause';
+            label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
+            bar.classList.replace('bg-amber-400', 'bg-indigo-500');
+          }
         } else {
           wrap.classList.add('hidden');
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error("Failed parsing scan telemetry updates:", err);
+      }
     }
     setInterval(pollScanStatus, 2000);
 
-    // Column visibility
+    async function togglePause() {
+      const action = isPaused ? 'resume' : 'pause';
+      const response = await fetch(`/api/scan/${action}`, { method: 'POST' });
+      if (response.ok) {
+        await pollScanStatus(); // Instantly update UI with state
+      } else {
+        console.error(`Error requesting background scan run-state ${action}`);
+      }
+    }
+
+    // Column visibility configurations
     const columns = [
       { id: 'col-select', label: 'Select', default: true },
       { id: 'col-source', label: 'Source File', default: true },
@@ -541,35 +572,6 @@
         colCheckboxesContainer.appendChild(label);
       });
       applyColumnVisibility();
-    }
-
-    let isPaused = false;
-
-    async function togglePause() {
-      const action = isPaused ? 'resume' : 'pause';
-      await fetch(`/api/scan/${action}`, { method: 'POST' });
-      pollScanStatus(); // Immediately refresh UI
-    }
-
-    // Inside your existing pollScanStatus() function, update the DOM updates:
-    if (data.scanning || data.is_paused) {
-      wrap.classList.remove('hidden');
-      bar.style.width = `${data.percent}%`;
-      percent.textContent = `${data.percent}% (${data.processed}/${data.total})`;
-      
-      if (data.is_paused) {
-        isPaused = true;
-        document.getElementById('pause-btn').textContent = 'Resume';
-        label.textContent = `⏸ Paused: ${data.current_file ? data.current_file.split('/').pop() : ''}`;
-        bar.classList.replace('bg-indigo-500', 'bg-amber-400');
-      } else {
-        isPaused = false;
-        document.getElementById('pause-btn').textContent = 'Pause';
-        label.textContent = `Scanning: ${data.current_file ? data.current_file.split('/').pop() : ''}`;
-        bar.classList.replace('bg-amber-400', 'bg-indigo-500');
-      }
-    } else {
-      wrap.classList.add('hidden');
     }
   </script>
 </body>
