@@ -117,7 +117,7 @@
           </thead>
           <tbody class="divide-y divide-gray-100">
             {% for row in rows %}
-            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }} {{ 'row-duplicate' if row.duplicates else '' }}">
+            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }} {{ 'row-duplicate' if (row.duplicates or show_duplicates) else '' }}">
               <td class="px-4 py-4 align-top col-select">
                 <input type="checkbox" class="row-checkbox rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
@@ -207,7 +207,7 @@
     <!-- Mobile Cards -->
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
-      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if row.duplicates else '' }}">
+      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if (row.duplicates or show_duplicates) else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex items-start gap-3 min-w-0">
             <input type="checkbox" class="row-checkbox mt-1 rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
