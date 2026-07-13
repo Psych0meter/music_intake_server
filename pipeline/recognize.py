@@ -284,15 +284,24 @@ def genius_lyrics_search(snippet):
         clean_query = " ".join(snippet.split()[:12]) 
         resp = requests.get(
             "https://api.genius.com/search",
-            params={"q": clean_query},
+            params={
+                "q": clean_query,
+                "type": "song"  # <--- FORCES GENIUS TO IGNORE ESSAYS/BOOKS
+            },
             headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
             timeout=15,
         )
         hits = resp.json().get("response", {}).get("hits", [])
         if not hits:
             return None, None
-        result = hits[0]["result"]
-        return result.get("primary_artist", {}).get("name"), result.get("title")
+            
+        # Ensure the hit type is actually a song entry
+        for hit in hits:
+            if hit.get("type") == "song":
+                result = hit["result"]
+                return result.get("primary_artist", {}).get("name"), result.get("title")
+                
+        return None, None
     except Exception as e:
         print(f"[genius] search failed: {e}", file=sys.stderr)
         return None, None
@@ -300,7 +309,7 @@ def genius_lyrics_search(snippet):
 
 def lyrics_identify(filepath, duration):
     text = transcribe_track(filepath, duration)
-    if not text or len(text.split()) < 6:
+    if not text or len(text.split()) < 15:
         return None, None
     return genius_lyrics_search(text)
 
