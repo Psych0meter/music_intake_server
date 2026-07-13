@@ -12,7 +12,6 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
-# Safely pull from environment, fallback to default path
 DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
 
 NAS_INTAKE = Path("/mnt/nas-intake")
@@ -20,7 +19,6 @@ APPROVED = NAS_INTAKE / "approved"
 REJECTED = NAS_INTAKE / "rejected"
 
 app = Flask(__name__)
-
 
 def load_scan_roots():
     if not SCAN_ROOTS_FILE.is_file():
@@ -35,10 +33,8 @@ def load_scan_roots():
             roots.append(p.resolve())
     return roots
 
-
 def allowed_roots():
     return load_scan_roots() + [APPROVED.resolve(), REJECTED.resolve()]
-
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -47,7 +43,6 @@ def get_db():
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
-
 def sanitize_filename(name):
     if not name:
         return ""
@@ -55,7 +50,6 @@ def sanitize_filename(name):
     if sanitized in (".", "..") or sanitized.startswith(".."):
         return "_"
     return sanitized
-
 
 def human_size(num_bytes):
     if num_bytes is None:
@@ -66,7 +60,6 @@ def human_size(num_bytes):
             return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
 
-
 def human_duration(seconds):
     if seconds is None:
         return "?"
@@ -74,16 +67,14 @@ def human_duration(seconds):
     m, s = divmod(seconds, 60)
     return f"{m}:{s:02d}"
 
-
 def relative_source(filepath_str):
     p = Path(filepath_str)
     for root in load_scan_roots():
         try:
-            return str(p.relative_to(root.parent))
+            return str(p.relative_to(root))
         except ValueError:
             continue
     return filepath_str
-
 
 def _approve_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
@@ -112,7 +103,6 @@ def _approve_one(conn, item_id):
     conn.commit()
     return True, None
 
-
 def _reject_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
@@ -129,7 +119,6 @@ def _reject_one(conn, item_id):
     conn.commit()
     return True, None
 
-
 def _rescan_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
@@ -137,7 +126,6 @@ def _rescan_one(conn, item_id):
     conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
-
 
 def _run_batch(conn, ids, fn):
     results = {}
@@ -149,14 +137,14 @@ def _run_batch(conn, ids, fn):
         results[item_id] = {"ok": ok, "error": err}
     return results
 
-
 @app.route("/")
 def index():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 50, type=int)
     search_query = request.args.get("q", "").strip()
     show_unrecognized = request.args.get("unrecognized", "0") == "1"
-    
+    show_duplicates = request.args.get("duplicates", "0") == "1"
+
     sort_by = request.args.get("sort", "confidence")
     order = request.args.get("order", "asc")
 
@@ -169,6 +157,10 @@ def index():
 
     if not show_unrecognized:
         query_conditions.append("confidence > 0")
+
+    # Server-side duplicates filtering
+    if show_duplicates:
+        query_conditions.append("filehash IN (SELECT filehash FROM queue WHERE status = 'pending' AND filehash IS NOT NULL GROUP BY filehash HAVING COUNT(*) > 1)")
 
     if search_query:
         query_conditions.append(
@@ -204,9 +196,9 @@ def index():
     offset = (page - 1) * per_page
 
     final_query = f"""
-        SELECT * FROM queue 
-        {where_clause} 
-        ORDER BY {db_column} {db_order} 
+        SELECT * FROM queue
+        {where_clause}
+        ORDER BY {db_column} {db_order}
         LIMIT ? OFFSET ?
     """
     raw_rows = conn.execute(final_query, query_params + [per_page, offset]).fetchall()
@@ -247,11 +239,11 @@ def index():
         total_pages=total_pages,
         search_query=search_query,
         show_unrecognized=show_unrecognized,
+        show_duplicates=show_duplicates,
         sort_by=sort_by,
         order=order,
         scan_roots=[str(p) for p in load_scan_roots()],
     )
-
 
 @app.route("/api/scan-status")
 def scan_status():
@@ -260,20 +252,18 @@ def scan_status():
     conn.close()
     if not row or not row["total"]:
         return jsonify({
-            "total": 0, "processed": 0, "percent": 100, 
+            "total": 0, "processed": 0, "percent": 100,
             "current_file": None, "scanning": False, "is_paused": False
         })
     total = row["total"]
     processed = row["processed"] or 0
-    
-    # Check if column exists in the Row keys to prevent Attribute/KeyErrors
     is_paused = bool(row["is_paused"]) if "is_paused" in row.keys() else False
 
     return jsonify({
-        "total": total, 
-        "processed": processed, 
+        "total": total,
+        "processed": processed,
         "percent": int((processed / total) * 100) if total else 100,
-        "current_file": row["current_file"], 
+        "current_file": row["current_file"],
         "scanning": processed < total,
         "is_paused": is_paused
     })
@@ -286,7 +276,6 @@ def pause_scan():
     conn.close()
     return jsonify({"status": "paused"})
 
-
 @app.route("/api/scan/resume", methods=["POST"])
 def resume_scan():
     conn = get_db()
@@ -294,7 +283,6 @@ def resume_scan():
     conn.commit()
     conn.close()
     return jsonify({"status": "resumed"})
-
 
 @app.route("/api/audio/<int:item_id>")
 def audio(item_id):
@@ -310,14 +298,12 @@ def audio(item_id):
         abort(404)
     return send_file(src, conditional=True)
 
-
 @app.route("/api/approve/<int:item_id>", methods=["POST"])
 def approve(item_id):
     conn = get_db()
     ok, err = _approve_one(conn, item_id)
     conn.close()
     return jsonify({"status": "approved"}) if ok else (jsonify({"error": err}), 400)
-
 
 @app.route("/api/reject/<int:item_id>", methods=["POST"])
 def reject(item_id):
@@ -326,14 +312,12 @@ def reject(item_id):
     conn.close()
     return jsonify({"status": "rejected"}) if ok else (jsonify({"error": err}), 404)
 
-
 @app.route("/api/rescan/<int:item_id>", methods=["POST"])
 def rescan(item_id):
     conn = get_db()
     ok, err = _rescan_one(conn, item_id)
     conn.close()
     return jsonify({"status": "rescan_queued"}) if ok else (jsonify({"error": err}), 404)
-
 
 @app.route("/api/approve-batch", methods=["POST"])
 def approve_batch():
@@ -355,7 +339,6 @@ def approve_batch():
     finally:
         conn.close()
 
-
 @app.route("/api/reject-batch", methods=["POST"])
 def reject_batch():
     ids = (request.get_json() or {}).get("ids", [])
@@ -364,7 +347,6 @@ def reject_batch():
     conn.close()
     return jsonify({"results": results})
 
-
 @app.route("/api/rescan-batch", methods=["POST"])
 def rescan_batch():
     ids = (request.get_json() or {}).get("ids", [])
@@ -372,7 +354,6 @@ def rescan_batch():
     results = _run_batch(conn, ids, _rescan_one)
     conn.close()
     return jsonify({"results": results})
-
 
 @app.route("/api/delete/<int:item_id>", methods=["POST"])
 def delete_item(item_id):
@@ -393,7 +374,6 @@ def delete_item(item_id):
     conn.close()
     return jsonify({"status": "deleted"})
 
-
 @app.route("/api/purge", methods=["POST"])
 def purge_queue():
     conn = get_db()
@@ -407,7 +387,6 @@ def purge_queue():
     finally:
         conn.close()
 
-
 @app.route("/api/edit/<int:item_id>", methods=["POST"])
 def edit(item_id):
     data = request.get_json() or {}
@@ -419,7 +398,6 @@ def edit(item_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "updated"})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
