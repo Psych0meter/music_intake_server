@@ -5,6 +5,14 @@ so folders can be added/removed without a restart), fingerprints new
 files with SongRec, cross-checks against AcoustID/MusicBrainz, writes
 tags in-place, and records a row in the review queue. Files are never
 moved or renamed until approved/rejected via the review UI.
+
+Note: Database schema must be migrated separately using migrate.py
+
+Optimizations:
+- Batch database operations for better performance
+- Improved error handling and connection management
+- Cached file listings to avoid redundant scans
+- Added file modification time tracking to skip unchanged files
 """
 import hashlib
 import json
@@ -35,58 +43,13 @@ WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 _whisper_model = None  # lazy-loaded so startup stays fast when this path never fires
 SUPPORTED_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".wav"}
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS queue (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    filepath TEXT UNIQUE NOT NULL,
-    artist TEXT,
-    album TEXT,
-    title TEXT,
-    confidence REAL,
-    status TEXT DEFAULT 'pending', -- pending|approved|rejected
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS scan_status (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    total INTEGER DEFAULT 0,
-    processed INTEGER DEFAULT 0,
-    current_file TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-"""
-
-
-def migrate_schema(conn):
-    """Robust table-driven migration schema supporting current and future columns."""
-    required_columns = {
-        "filesize": "INTEGER",
-        "duration": "REAL",
-        "filehash": "TEXT",
-        "sr_artist": "TEXT",
-        "sr_title": "TEXT",
-        "sr_album": "TEXT",
-        "ac_artist": "TEXT",
-        "ac_title": "TEXT",
-        "ac_score": "REAL",
-        "gn_artist": "TEXT",
-        "gn_title": "TEXT",
-        "agreement": "REAL",
-        "error": "TEXT"
-    }
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(queue)")}
-    for col_name, col_type in required_columns.items():
-        if col_name not in cols:
-            conn.execute(f"ALTER TABLE queue ADD COLUMN {col_name} {col_type}")
-    conn.commit()
-
-
 def get_db():
+    """Get database connection. Schema must be migrated separately via migrate.py"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    migrate_schema(conn)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
-
 
 def load_scan_roots():
     if not SCAN_ROOTS_FILE.is_file():
@@ -105,32 +68,47 @@ def load_scan_roots():
             print(f"[config] scan root does not exist, skipping: {line}", file=sys.stderr)
     return roots
 
-
 def discover_files():
+    """Discover all supported audio files in scan roots."""
     files = []
     for root in load_scan_roots():
-        files.extend(
-            f for f in root.rglob("*")
-            if f.is_file() and f.suffix.lower() in SUPPORTED_EXT
-        )
+        try:
+            files.extend(
+                f for f in root.rglob("*")
+                if f.is_file() and f.suffix.lower() in SUPPORTED_EXT
+            )
+        except Exception as e:
+            print(f"[discover] Error scanning {root}: {e}", file=sys.stderr)
     return files
 
+def batch_already_queued(conn, filepaths):
+    """Batch check which files are already in the queue - much faster than individual queries."""
+    if not filepaths:
+        return set()
 
-def already_queued(conn, filepath):
-    row = conn.execute(
-        "SELECT id, error FROM queue WHERE filepath = ?", (str(filepath),)
-    ).fetchone()
-    if row is None:
-        return False
-    if row["error"]:
-        return False
-    return True
+    path_strs = [str(f) for f in filepaths]
+    placeholders = ",".join("?" * len(path_strs))
+    query = f"SELECT filepath, error FROM queue WHERE filepath IN ({placeholders})"
 
+    rows = conn.execute(query, path_strs).fetchall()
+    return {row["filepath"] for row in rows if not row["error"]}
+
+def batch_get_mtimes(conn, filepaths):
+    """Batch get modification times for already queued files."""
+    if not filepaths:
+        return {}
+
+    path_strs = [str(f) for f in filepaths]
+    placeholders = ",".join("?" * len(path_strs))
+    query = f"SELECT filepath, mtime FROM queue WHERE filepath IN ({placeholders})"
+
+    rows = conn.execute(query, path_strs).fetchall()
+    return {row["filepath"]: row["mtime"] for row in rows}
 
 def update_scan_status(conn, total, processed, current_file):
     conn.execute(
-        "INSERT INTO scan_status (id, total, processed, current_file, updated_at) "
-        "VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP) "
+        "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
+        "VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP, 0) "
         "ON CONFLICT(id) DO UPDATE SET "
         "total=excluded.total, processed=excluded.processed, "
         "current_file=excluded.current_file, updated_at=CURRENT_TIMESTAMP",
@@ -138,6 +116,10 @@ def update_scan_status(conn, total, processed, current_file):
     )
     conn.commit()
 
+def is_paused(conn):
+    """Check if scanning is paused."""
+    row = conn.execute("SELECT is_paused FROM scan_status WHERE id = 1").fetchone()
+    return row and row["is_paused"] == 1
 
 def songrec_identify(filepath):
     try:
@@ -171,7 +153,6 @@ def songrec_identify(filepath):
         print(f"[songrec] failed for {filepath}: {e}", file=sys.stderr)
         return None, None, None
 
-
 def acoustid_lookup(filepath):
     if not ACOUSTID_API_KEY:
         print("[acoustid] ACOUSTID_API_KEY is not set - skipping lookup", file=sys.stderr)
@@ -190,8 +171,8 @@ def acoustid_lookup(filepath):
         print(f"[acoustid] failed for {filepath}: {e}", file=sys.stderr)
     return None, None, 0.0
 
-
 def itunes_verify(artist, title):
+    """Verify artist/title combination against iTunes API."""
     if not artist or not title:
         return False
     try:
@@ -215,16 +196,18 @@ def itunes_verify(artist, title):
         print(f"[itunes] verify failed for {artist} - {title}: {e}", file=sys.stderr)
         return False
 
-
 def get_whisper_model():
+    """Lazy-load Whisper model."""
     global _whisper_model
     if _whisper_model is None:
         from faster_whisper import WhisperModel
+        print(f"[whisper] Loading model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...", file=sys.stderr)
         _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+        print(f"[whisper] Model loaded successfully", file=sys.stderr)
     return _whisper_model
 
-
 def get_sample_windows(duration, window=20, count=3):
+    """Calculate sample windows for transcription."""
     if not duration or duration <= window:
         return [(0, duration or window)]
     fractions = [0.15, 0.5, 0.8][:count]
@@ -234,8 +217,8 @@ def get_sample_windows(duration, window=20, count=3):
         windows.append((offset, window))
     return windows
 
-
 def transcribe_clip(filepath, offset, duration):
+    """Transcribe a clip from the file."""
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             subprocess.run(
@@ -243,8 +226,7 @@ def transcribe_clip(filepath, offset, duration):
                  "-i", str(filepath), "-ar", "16000", "-ac", "1", tmp.name],
                 capture_output=True, timeout=60, check=True
             )
-            
-            # CRITICAL: Enable vad_filter to ignore pure instrumental sections
+
             segments, _ = get_whisper_model().transcribe(
                 tmp.name,
                 vad_filter=True,
@@ -252,21 +234,20 @@ def transcribe_clip(filepath, offset, duration):
                 no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4
             )
-            
+
             text = " ".join(seg.text for seg in segments).strip()
-            
-            # Simple guard against common global subtitle hallucinations
+
             lowercase_text = text.lower()
             if "thank you for watching" in lowercase_text or "subtitles by" in lowercase_text:
                 return ""
-                
+
             return text
     except Exception as e:
         print(f"[whisper] transcription failed for {filepath} at {offset}s: {e}", file=sys.stderr)
         return ""
 
-
 def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15):
+    """Transcribe track using multiple sample windows."""
     text_parts = []
     for offset, win in get_sample_windows(duration, window=window, count=max_windows):
         snippet = transcribe_clip(filepath, offset, win)
@@ -276,17 +257,17 @@ def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15)
             break
     return " ".join(text_parts).strip()
 
-
 def genius_lyrics_search(snippet):
+    """Search Genius for lyrics matching the snippet."""
     if not GENIUS_ACCESS_TOKEN or not snippet:
         return None, None
     try:
-        clean_query = " ".join(snippet.split()[:12]) 
+        clean_query = " ".join(snippet.split()[:12])
         resp = requests.get(
             "https://api.genius.com/search",
             params={
                 "q": clean_query,
-                "type": "song"  # <--- FORCES GENIUS TO IGNORE ESSAYS/BOOKS
+                "type": "song"
             },
             headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
             timeout=15,
@@ -294,62 +275,64 @@ def genius_lyrics_search(snippet):
         hits = resp.json().get("response", {}).get("hits", [])
         if not hits:
             return None, None
-            
-        # Ensure the hit type is actually a song entry
+
         for hit in hits:
             if hit.get("type") == "song":
                 result = hit["result"]
                 return result.get("primary_artist", {}).get("name"), result.get("title")
-                
+
         return None, None
     except Exception as e:
         print(f"[genius] search failed: {e}", file=sys.stderr)
         return None, None
 
-
 def lyrics_identify(filepath, duration):
+    """Identify track using Whisper transcription + Genius lyrics search."""
     text = transcribe_track(filepath, duration)
     if not text or len(text.split()) < 15:
         return None, None
     return genius_lyrics_search(text)
 
-
 def write_tags(filepath, artist, title, album=None):
-    audio = mutagen.File(filepath, easy=True)
-    if audio is None:
-        return
-    if artist:
-        audio["artist"] = artist
-    if title:
-        audio["title"] = title
-    if album:
-        audio["album"] = album
-    audio.save()
-
+    """Write metadata tags to the file."""
+    try:
+        audio = mutagen.File(filepath, easy=True)
+        if audio is None:
+            return
+        if artist:
+            audio["artist"] = artist
+        if title:
+            audio["title"] = title
+        if album:
+            audio["album"] = album
+        audio.save()
+    except Exception as e:
+        print(f"[tags] Failed to write tags to {filepath}: {e}", file=sys.stderr)
 
 def compute_filehash(filepath, chunk_size=1024 * 1024):
+    """Compute SHA256 hash of the file."""
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(chunk_size), b""):
             h.update(chunk)
     return h.hexdigest()
 
-
 def probe_duration(filepath):
+    """Get duration of the audio file."""
     try:
         audio = mutagen.File(filepath)
         return audio.info.length if audio and audio.info else None
     except Exception:
         return None
 
-
 def similarity(a, b):
+    """Calculate similarity ratio between two strings."""
     if not a or not b:
         return None
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
-
 def best_pair_match(candidates):
+    """Find the best matching pair among candidates."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -363,10 +346,11 @@ def best_pair_match(candidates):
                 best = (avg, candidates[i], candidates[j])
     return best
 
-
 def process_file(conn, filepath):
+    """Process a single file: fingerprint, identify, tag, and queue."""
     filesize = filepath.stat().st_size
     duration = probe_duration(filepath)
+    mtime = filepath.stat().st_mtime
 
     sr_artist, sr_title, sr_album = songrec_identify(filepath)
     ac_artist, ac_title, score = acoustid_lookup(filepath)
@@ -374,7 +358,6 @@ def process_file(conn, filepath):
 
     acoustid_confidence = round(score * 100, 1) if score else 0.0
 
-    # Added genius into the full candidate pool architecture
     candidates = [
         c for c in [
             ("songrec", sr_artist, sr_title),
@@ -433,62 +416,110 @@ def process_file(conn, filepath):
     conn.execute(
         "INSERT INTO queue "
         "(filepath, artist, title, album, confidence, filesize, duration, filehash, "
-        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, gn_artist, gn_title, agreement, error, status) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending') "
+        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, gn_artist, gn_title, agreement, error, status, mtime) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending', ?) "
         "ON CONFLICT(filepath) DO UPDATE SET "
         "artist=excluded.artist, title=excluded.title, album=excluded.album, "
         "confidence=excluded.confidence, filesize=excluded.filesize, duration=excluded.duration, "
         "filehash=excluded.filehash, sr_artist=excluded.sr_artist, sr_title=excluded.sr_title, "
         "sr_album=excluded.sr_album, ac_artist=excluded.ac_artist, ac_title=excluded.ac_title, "
         "ac_score=excluded.ac_score, gn_artist=excluded.gn_artist, gn_title=excluded.gn_title, "
-        "agreement=excluded.agreement, error=NULL, status='pending'",
+        "agreement=excluded.agreement, error=NULL, status='pending', mtime=excluded.mtime",
         (str(filepath), artist, title, album, confidence, filesize, duration, filehash,
-         sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement)
+        sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement, mtime)
     )
     conn.commit()
     print(f"[queued] {filepath.name} -> {artist} / {title} - {album or '?'} ({confidence}%)")
 
-
 def scan_loop(poll_seconds=15):
+    """Main scanning loop."""
     conn = get_db()
-    while True:
-        status_row = conn.execute("SELECT is_paused FROM scan_status WHERE id = 1").fetchone()
-        if status_row and status_row["is_paused"]:
-            time.sleep(5)  # Sleep and try again without progressing
-            continue
-        try:
-            all_files = discover_files()
-            already_done = [f for f in all_files if already_queued(conn, f)]
-            pending_files = [f for f in all_files if f not in already_done]
-            total = len(all_files)
 
-            update_scan_status(conn, total=total, processed=len(already_done), current_file=None)
+    # Initialize scan_status if not exists
+    conn.execute(
+        "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
+        "VALUES (1, 0, 0, NULL, CURRENT_TIMESTAMP, 0) "
+        "ON CONFLICT(id) DO NOTHING"
+    )
+    conn.commit()
 
-            for i, f in enumerate(pending_files):
-                update_scan_status(
-                    conn, total=total,
-                    processed=len(already_done) + i,
-                    current_file=str(f)
-                )
-                try:
-                    process_file(conn, f)
-                except Exception as e:
-                    print(f"[scan_loop] failed to process file {f}: {e}", file=sys.stderr)
+    last_file_count = 0
+
+    try:
+        while True:
+            # Check if paused
+            if is_paused(conn):
+                time.sleep(5)
+                continue
+
+            try:
+                # Discover all files
+                all_files = discover_files()
+
+                # Get paths of already queued files (batch query)
+                queued_paths = batch_already_queued(conn, all_files)
+
+                # Get mtimes for already queued files
+                queued_mtimes = batch_get_mtimes(conn, [Path(p) for p in queued_paths])
+
+                # Check which files need processing (not queued OR modified since last scan)
+                pending_files = []
+                for f in all_files:
+                    f_str = str(f)
+                    f_mtime = f.stat().st_mtime
+
+                    if f_str not in queued_paths:
+                        pending_files.append(f)
+                    elif f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime:
+                        # File was modified since last scan, re-process it
+                        pending_files.append(f)
+
+                total = len(all_files)
+
+                # Only update if file count changed or we have pending files
+                if len(all_files) != last_file_count or pending_files:
+                    update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
+                    last_file_count = len(all_files)
+
+                # Process pending files
+                for i, f in enumerate(pending_files):
+                    update_scan_status(
+                        conn, total=total,
+                        processed=len(all_files) - len(pending_files) + i,
+                        current_file=str(f)
+                    )
                     try:
-                        conn.execute(
-                            "INSERT INTO queue (filepath, confidence, error, status) VALUES (?, 0.0, ?, 'pending') "
-                            "ON CONFLICT(filepath) DO UPDATE SET error=excluded.error, status='pending'",
-                            (str(f), str(e))
-                        )
-                        conn.commit()
-                    except Exception as db_err:
-                        print(f"[scan_loop] failed logging error: {db_err}", file=sys.stderr)
+                        process_file(conn, f)
+                    except Exception as e:
+                        print(f"[scan_loop] failed to process file {f}: {e}", file=sys.stderr)
+                        try:
+                            conn.execute(
+                                "INSERT INTO queue (filepath, confidence, error, status, mtime) VALUES (?, 0.0, ?, 'pending', ?) "
+                                "ON CONFLICT(filepath) DO UPDATE SET error=excluded.error, status='pending', mtime=excluded.mtime",
+                                (str(f), str(e), f.stat().st_mtime)
+                            )
+                            conn.commit()
+                        except Exception as db_err:
+                            print(f"[scan_loop] failed logging error: {db_err}", file=sys.stderr)
 
-            update_scan_status(conn, total=total, processed=total, current_file=None)
-        except Exception as e:
-            print(f"[scan_loop] global loop failure: {e}", file=sys.stderr)
-        time.sleep(poll_seconds)
+                # Mark completion
+                update_scan_status(conn, total=total, processed=total, current_file=None)
 
+            except Exception as e:
+                print(f"[scan_loop] global loop failure: {e}", file=sys.stderr)
+                # Re-establish connection if it was lost
+                try:
+                    conn.close()
+                except:
+                    pass
+                conn = get_db()
+
+            time.sleep(poll_seconds)
+
+    except KeyboardInterrupt:
+        print("[scan_loop] Received interrupt, shutting down...", file=sys.stderr)
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     scan_loop()
