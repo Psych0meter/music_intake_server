@@ -9,6 +9,8 @@ import:
     quiet_fallback: skip
     incremental: yes
     log: /opt/music-intake/db/beets-import.log
+    quiet: yes
+    duplicate: keep
 
 paths:
     default: $albumartist/$album%aunique{}/$track $title
