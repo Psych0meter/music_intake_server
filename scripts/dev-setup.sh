@@ -27,15 +27,18 @@ for arg in "$@"; do
 done
 
 echo "==> Creating directories"
-sudo mkdir -p /opt/music-intake/{app/templates,pipeline,db,config}
+sudo mkdir -p /opt/music-intake/{app/templates,pipeline,db,config,migrations,scripts}
 sudo mkdir -p /mnt/nas-intake/{approved,rejected,library}
 sudo mkdir -p /mnt/nas-source/test-folder
 sudo chown -R "$(whoami)" /opt/music-intake /mnt/nas-intake /mnt/nas-source
 
-echo "==> Copying app code"
+echo "==> Copying application and pipeline files"
 cp -r "$REPO_ROOT"/app/* /opt/music-intake/app/
 cp -r "$REPO_ROOT"/pipeline/* /opt/music-intake/pipeline/
+cp -r "$REPO_ROOT"/migrations/* /opt/music-intake/migrations/
+cp "$REPO_ROOT"/migrate.py /opt/music-intake/scripts/migrate.py
 cp "$REPO_ROOT"/config/beets-config.yaml /opt/music-intake/config/
+
 [ -f /opt/music-intake/config/scan_roots.txt ] || cp "$REPO_ROOT"/config/scan_roots.txt.example /opt/music-intake/config/scan_roots.txt
 [ -f /opt/music-intake/config/secrets.env ] || cp "$REPO_ROOT"/config/secrets.env.example /opt/music-intake/config/secrets.env
 echo "/mnt/nas-source/test-folder" > /opt/music-intake/config/scan_roots.txt
@@ -80,6 +83,11 @@ if $WITH_SONGREC; then
     rm -rf /tmp/songrec
   fi
 fi
+
+echo "==> Running database migrations"
+# Executed now that the Virtual Environment is ready and populated
+/opt/music-intake/venv/bin/python3 /opt/music-intake/scripts/migrate.py --status
+/opt/music-intake/venv/bin/python3 /opt/music-intake/scripts/migrate.py
 
 echo ""
 echo "==> Done. Next steps:"

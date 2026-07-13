@@ -76,6 +76,8 @@ cat <<'EOF' > /etc/systemd/system/music-recognize.service
 [Unit]
 Description=Music Intake recognition daemon
 After=network.target
+Requires=music-migrate.service
+After=music-migrate.service
 
 [Service]
 Type=simple
@@ -94,6 +96,8 @@ cat <<'EOF' > /etc/systemd/system/music-review-ui.service
 [Unit]
 Description=Music Intake Flask review UI
 After=network.target
+Requires=music-migrate.service
+After=music-migrate.service
 
 [Service]
 Type=simple
@@ -127,6 +131,17 @@ Description=beets import of approved/ into the managed library
 Type=oneshot
 User=musicintake
 ExecStart=/opt/music-intake/pipeline/import_approved.sh
+EOF
+
+cat <<'EOF' > /etc/systemd/system/music-migrate.service
+[Unit]
+Description=Apply Music Intake database migrations
+
+[Service]
+Type=oneshot
+User=musicintake
+ExecStart=/opt/music-intake/venv/bin/python3 /opt/music-intake/scripts/migrate.py
+RemainAfterExit=yes
 EOF
 
 systemctl daemon-reload

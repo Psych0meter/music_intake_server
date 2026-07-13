@@ -38,41 +38,15 @@ def allowed_roots():
     return load_scan_roots() + [APPROVED.resolve(), REJECTED.resolve()]
 
 
-def init_db():
-    """Initializes schema and builds target indexing layouts to optimize high-volume queries."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    
-    conn.executescript(
-        "CREATE TABLE IF NOT EXISTS scan_status ("
-        "id INTEGER PRIMARY KEY CHECK (id = 1), "
-        "total INTEGER DEFAULT 0, processed INTEGER DEFAULT 0, "
-        "current_file TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
-    )
-    
-    required_columns = {
-        "filesize": "INTEGER", "duration": "REAL", "filehash": "TEXT",
-        "sr_artist": "TEXT", "sr_title": "TEXT", "sr_album": "TEXT",
-        "ac_artist": "TEXT", "ac_title": "TEXT", "ac_score": "REAL",
-        "gn_artist": "TEXT", "gn_title": "TEXT", "agreement": "REAL", "error": "TEXT"
-    }
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(queue)")}
-    for col_name, col_type in required_columns.items():
-        if col_name not in cols:
-            conn.execute(f"ALTER TABLE queue ADD COLUMN {col_name} {col_type}")
-            
-    # High Performance Indexes for rapid sorting modifications
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_pagination ON queue(status, confidence);")
-    conn.commit()
-    conn.close()
-
-
 def get_db():
+    """Assumes migrations have already been applied by scripts/migrate.py
+    (run manually, or automatically via the music-migrate.service systemd
+    unit before this service starts) - this just opens a connection,
+    it does not create or alter any schema itself."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
 
@@ -428,5 +402,4 @@ def edit(item_id):
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(host="0.0.0.0", port=5000)
