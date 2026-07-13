@@ -122,10 +122,7 @@ build_container
 
 msg_info "Running ${APP} Install Script (branch: ${BRANCH})"
 
-curl -fsSL "$INSTALL_SCRIPT_URL" \
- | BRANCH="${BRANCH}" \
-   FUNCTIONS_FILE_PATH="${FUNCTIONS_FILE_PATH}" \
-   lxc-attach -n "$CTID" -- bash
+curl -fsSL "$INSTALL_SCRIPT_URL" | BRANCH="${BRANCH}" FUNCTIONS_FILE_PATH="${FUNCTIONS_FILE_PATH}" lxc-attach -n "$CTID" -- bash
 
 msg_ok "Install Script Completed"
 
