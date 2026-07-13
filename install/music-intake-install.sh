@@ -268,11 +268,11 @@ EOF
 
 systemctl daemon-reload
 
-
 msg_info "Running database migration"
 
-systemctl enable music-migrate.service
-systemctl start music-migrate.service
+runuser -u musicintake -- \
+    /opt/music-intake/venv/bin/python3 \
+    /opt/music-intake/migrate.py
 
 msg_ok "Database migration completed"
 

@@ -22,9 +22,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB_PATH = Path("/opt/music-intake/db/queue.sqlite3")
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+BASE_DIR = Path(__file__).resolve().parent
 
+DB_PATH = BASE_DIR / "db" / "queue.sqlite3"
+MIGRATIONS_DIR = BASE_DIR / "migrations"
 
 def get_connection():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -59,9 +60,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show what would be applied, without applying it")
     args = parser.parse_args()
 
-    if not MIGRATIONS_DIR.is_dir():
-        print(f"No migrations directory found at {MIGRATIONS_DIR}", file=sys.stderr)
-        sys.exit(1)
+    if not MIGRATIONS_DIR.exists():
+        raise FileNotFoundError(
+            f"Migration directory not found: {MIGRATIONS_DIR}"
+        )
 
     conn = get_connection()
     applied = applied_versions(conn)
