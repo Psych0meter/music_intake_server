@@ -57,29 +57,26 @@ CREATE TABLE IF NOT EXISTS scan_status (
 
 
 def migrate_schema(conn):
+    """Robust table-driven migration schema supporting current and future columns."""
+    required_columns = {
+        "filesize": "INTEGER",
+        "duration": "REAL",
+        "filehash": "TEXT",
+        "sr_artist": "TEXT",
+        "sr_title": "TEXT",
+        "sr_album": "TEXT",
+        "ac_artist": "TEXT",
+        "ac_title": "TEXT",
+        "ac_score": "REAL",
+        "gn_artist": "TEXT",
+        "gn_title": "TEXT",
+        "agreement": "REAL",
+        "error": "TEXT"
+    }
     cols = {row[1] for row in conn.execute("PRAGMA table_info(queue)")}
-    if "filesize" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN filesize INTEGER")
-    if "duration" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN duration REAL")
-    if "filehash" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN filehash TEXT")
-    if "sr_artist" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_artist TEXT")
-    if "sr_title" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_title TEXT")
-    if "sr_album" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_album TEXT")
-    if "ac_artist" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_artist TEXT")
-    if "ac_title" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_title TEXT")
-    if "ac_score" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_score REAL")
-    if "agreement" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN agreement REAL")
-    if "error" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN error TEXT")
+    for col_name, col_type in required_columns.items():
+        if col_name not in cols:
+            conn.execute(f"ALTER TABLE queue ADD COLUMN {col_name} {col_type}")
     conn.commit()
 
 
@@ -92,8 +89,6 @@ def get_db():
 
 
 def load_scan_roots():
-    """Re-read scan_roots.txt on every call, so adding/removing a folder
-    to scan takes effect on the next cycle without a restart."""
     if not SCAN_ROOTS_FILE.is_file():
         print(f"[config] {SCAN_ROOTS_FILE} does not exist - nothing to scan", file=sys.stderr)
         return []
@@ -147,11 +142,20 @@ def update_scan_status(conn, total, processed, current_file):
 def songrec_identify(filepath):
     try:
         result = subprocess.run(
-            ["songrec", "audio-file-to-recognized-song", str(filepath)],
+            ["songrec", "recognize", "-j", str(filepath)],
             capture_output=True, text=True, timeout=60
         )
-        data = json.loads(result.stdout)
-        track = data.get("track", {})
+
+        if not result.stdout or not result.stdout.strip():
+            print(f"[songrec] No acoustic match found for {filepath}")
+            return None, None, None
+
+        try:
+            data = json.loads(result.stdout)
+            track = data.get("track", {})
+        except json.JSONDecodeError:
+            print(f"[songrec] Failed to parse response payload: {result.stdout}")
+            return None, None, None
 
         artist = track.get("subtitle")
         title = track.get("title")
@@ -188,12 +192,6 @@ def acoustid_lookup(filepath):
 
 
 def itunes_verify(artist, title):
-    """Checks Apple's free iTunes Search API for a plausible match. This
-    is NOT independent audio fingerprinting - it's a text search that
-    confirms whether a given artist/title actually corresponds to a real,
-    cataloged release. Free, no API key, no signup, no billing risk.
-    Apple's informal guidance caps this around 20 requests/minute, which
-    is not a concern since this only fires on the disagreement subset."""
     if not artist or not title:
         return False
     try:
@@ -227,11 +225,6 @@ def get_whisper_model():
 
 
 def get_sample_windows(duration, window=20, count=3):
-    """Picks up to `count` short windows spread proportionally across the
-    track - a fixed 'first 60 seconds' guess misses punchlines or choruses
-    that land later, and breaks entirely on short clips. Falls back to a
-    single window covering whatever's available if duration is unknown
-    or shorter than the window itself."""
     if not duration or duration <= window:
         return [(0, duration or window)]
     fractions = [0.15, 0.5, 0.8][:count]
@@ -250,18 +243,30 @@ def transcribe_clip(filepath, offset, duration):
                  "-i", str(filepath), "-ar", "16000", "-ac", "1", tmp.name],
                 capture_output=True, timeout=60, check=True
             )
-            segments, _ = get_whisper_model().transcribe(tmp.name)
-            return " ".join(seg.text for seg in segments).strip()
+            
+            # CRITICAL: Enable vad_filter to ignore pure instrumental sections
+            segments, _ = get_whisper_model().transcribe(
+                tmp.name,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                no_speech_threshold=0.6,
+                compression_ratio_threshold=2.4
+            )
+            
+            text = " ".join(seg.text for seg in segments).strip()
+            
+            # Simple guard against common global subtitle hallucinations
+            lowercase_text = text.lower()
+            if "thank you for watching" in lowercase_text or "subtitles by" in lowercase_text:
+                return ""
+                
+            return text
     except Exception as e:
         print(f"[whisper] transcription failed for {filepath} at {offset}s: {e}", file=sys.stderr)
         return ""
 
 
 def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15):
-    """Samples up to max_windows clips across the track, stopping early
-    once enough words have been transcribed to search meaningfully -
-    avoids paying for all three windows when the first one already
-    landed on a clear chorus or spoken passage."""
     text_parts = []
     for offset, win in get_sample_windows(duration, window=window, count=max_windows):
         snippet = transcribe_clip(filepath, offset, win)
@@ -276,9 +281,10 @@ def genius_lyrics_search(snippet):
     if not GENIUS_ACCESS_TOKEN or not snippet:
         return None, None
     try:
+        clean_query = " ".join(snippet.split()[:12]) 
         resp = requests.get(
             "https://api.genius.com/search",
-            params={"q": snippet[:200]},
+            params={"q": clean_query},
             headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
             timeout=15,
         )
@@ -335,10 +341,6 @@ def similarity(a, b):
 
 
 def best_pair_match(candidates):
-    """candidates: list of (source_name, artist, title). Finds the pair of
-    independent sources that agree most strongly with each other - a lone
-    outlier among three sources gets ignored rather than dragging the
-    result down, unlike simple two-source averaging."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -359,42 +361,35 @@ def process_file(conn, filepath):
 
     sr_artist, sr_title, sr_album = songrec_identify(filepath)
     ac_artist, ac_title, score = acoustid_lookup(filepath)
+    gn_artist, gn_title = lyrics_identify(filepath, duration) if GENIUS_ACCESS_TOKEN else (None, None)
 
     acoustid_confidence = round(score * 100, 1) if score else 0.0
 
-    two_source_candidates = [
+    # Added genius into the full candidate pool architecture
+    candidates = [
         c for c in [
             ("songrec", sr_artist, sr_title),
             ("acoustid", ac_artist, ac_title),
+            ("genius", gn_artist, gn_title),
         ] if c[1] or c[2]
     ]
-    two_match = best_pair_match(two_source_candidates)
+    match = best_pair_match(candidates)
 
-    if two_match:
-        # SongRec and AcoustID already agree - trust it.
-        agree_score, (_, a1, t1), (_, a2, t2) = two_match
+    if match:
+        agree_score, (_, a1, t1), (_, a2, t2) = match
         artist = a1 or a2
         title = t1 or t2
         confidence = max(75.0, acoustid_confidence)
         agreement = agree_score
-    elif not sr_artist and not ac_artist:
-        # Both primary sources found genuinely nothing - last resort:
-        # transcribe the track locally (free, no API cost) and search
-        # the transcript against Genius. Only fires on true dead ends,
-        # not disagreements, since transcription is the most expensive
-        # step in the whole pipeline.
-        lyric_artist, lyric_title = lyrics_identify(filepath, duration)
+    elif not sr_artist and not ac_artist and not gn_artist:
+        artist, title = None, None
+        confidence = 0.0
         agreement = None
-        if lyric_artist or lyric_title:
-            artist, title = lyric_artist, lyric_title
-            confidence = 50.0  # single unverified source, still flagged for review
-        else:
-            artist, title = None, None
-            confidence = 0.0
+    elif gn_artist and not sr_artist and not ac_artist:
+        artist, title = gn_artist, gn_title
+        confidence = 50.0
+        agreement = None
     else:
-        # They disagree (both returned something, but different). Check
-        # whether either candidate corresponds to a real cataloged
-        # release via Apple's free iTunes Search API before giving up.
         sr_valid = itunes_verify(sr_artist, sr_title)
         ac_valid = itunes_verify(ac_artist, ac_title)
         agreement = None
@@ -406,14 +401,16 @@ def process_file(conn, filepath):
             artist, title = ac_artist, ac_title
             confidence = max(65.0, acoustid_confidence)
         else:
-            artist = sr_artist or ac_artist
-            title = sr_title or ac_title
+            artist = sr_artist or ac_artist or gn_artist
+            title = sr_title or ac_title or gn_title
             if sr_artist and ac_artist:
                 confidence = min(acoustid_confidence, 40.0)
             elif acoustid_confidence:
                 confidence = acoustid_confidence
             elif sr_artist:
                 confidence = 60.0
+            elif gn_artist:
+                confidence = 50.0
             else:
                 confidence = 0.0
 
@@ -427,16 +424,17 @@ def process_file(conn, filepath):
     conn.execute(
         "INSERT INTO queue "
         "(filepath, artist, title, album, confidence, filesize, duration, filehash, "
-        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, agreement, error, status) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending') "
+        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, gn_artist, gn_title, agreement, error, status) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending') "
         "ON CONFLICT(filepath) DO UPDATE SET "
         "artist=excluded.artist, title=excluded.title, album=excluded.album, "
         "confidence=excluded.confidence, filesize=excluded.filesize, duration=excluded.duration, "
         "filehash=excluded.filehash, sr_artist=excluded.sr_artist, sr_title=excluded.sr_title, "
         "sr_album=excluded.sr_album, ac_artist=excluded.ac_artist, ac_title=excluded.ac_title, "
-        "ac_score=excluded.ac_score, agreement=excluded.agreement, error=NULL, status='pending'",
+        "ac_score=excluded.ac_score, gn_artist=excluded.gn_artist, gn_title=excluded.gn_title, "
+        "agreement=excluded.agreement, error=NULL, status='pending'",
         (str(filepath), artist, title, album, confidence, filesize, duration, filehash,
-         sr_artist, sr_title, sr_album, ac_artist, ac_title, score, agreement)
+         sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement)
     )
     conn.commit()
     print(f"[queued] {filepath.name} -> {artist} / {title} - {album or '?'} ({confidence}%)")

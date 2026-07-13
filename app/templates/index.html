@@ -15,6 +15,7 @@
     th.desc::after { content: ' \25BC'; font-size: 0.7em; color: #6b7280; }
     
     .hide-unrecognized .row-unrecognized { display: none !important; }
+    .item-row.is-selected { background-color: #eef2ff; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800 hide-unrecognized" id="body-container">
@@ -67,6 +68,16 @@
       </div>
     </div>
 
+    <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-indigo-600 text-white rounded-xl px-4 py-3 shadow-sm">
+      <span class="text-sm font-medium"><span id="selected-count">0</span> selected</span>
+      <div class="flex items-center gap-2">
+        <button onclick="bulkAct('approve')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-400">Approve Selected</button>
+        <button onclick="bulkAct('reject')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-gray-800 hover:bg-gray-100">Reject Selected</button>
+        <button onclick="bulkAct('rescan')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400">Rescan Selected</button>
+        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-700 hover:bg-indigo-800">Clear</button>
+      </div>
+    </div>
+
     <div id="empty-state" class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm {% if rows %}hidden{% endif %}">
       <p class="text-gray-500 text-lg">🎉 The intake queue is completely clear!</p>
     </div>
@@ -77,22 +88,30 @@
         <table class="w-full table-auto text-left border-collapse" id="review-table">
           <thead>
             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
-              <th class="px-4 py-4 col-source" data-sort="str" data-col="0">Source File / Path</th>
-              <th class="px-4 py-4 col-preview" data-col="1">Preview</th>
-              <th class="px-4 py-4 col-songrec" data-sort="str" data-col="2">SongRec</th>
-              <th class="px-4 py-4 col-acoustid" data-sort="str" data-col="3">AcoustID</th>
-              <th class="px-4 py-4 col-title" data-sort="str" data-col="4">Track Title</th>
-              <th class="px-4 py-4 col-artist" data-sort="str" data-col="5">Artist</th>
-              <th class="px-4 py-4 col-album" data-sort="str" data-col="6">Album</th>
-              <th class="px-4 py-4 col-size text-center" data-sort="num" data-col="7">Size</th>
-              <th class="px-4 py-4 col-length text-center" data-sort="num" data-col="8">Length</th>
-              <th class="px-4 py-4 col-confidence text-center" data-sort="num" data-col="9">Confidence</th>
-              <th class="px-4 py-4 col-actions text-right" data-col="10">Actions</th>
+              <th class="px-4 py-4 col-select" data-col="0">
+                <input type="checkbox" id="select-all" class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleSelectAll(this.checked)">
+              </th>
+              <th class="px-4 py-4 col-source" data-sort="str" data-col="1">Source File / Path</th>
+              <th class="px-4 py-4 col-preview" data-col="2">Preview</th>
+              <th class="px-4 py-4 col-songrec" data-sort="str" data-col="3">SongRec</th>
+              <th class="px-4 py-4 col-acoustid" data-sort="str" data-col="4">AcoustID</th>
+              <th class="px-4 py-4 col-genius" data-sort="str" data-col="5">Genius</th>
+              <th class="px-4 py-4 col-title" data-sort="str" data-col="6">Track Title</th>
+              <th class="px-4 py-4 col-artist" data-sort="str" data-col="7">Artist</th>
+              <th class="px-4 py-4 col-album" data-sort="str" data-col="8">Album</th>
+              <th class="px-4 py-4 col-size text-center" data-sort="num" data-col="9">Size</th>
+              <th class="px-4 py-4 col-length text-center" data-sort="num" data-col="10">Length</th>
+              <th class="px-4 py-4 col-confidence text-center" data-sort="num" data-col="11">Confidence</th>
+              <th class="px-4 py-4 col-actions text-right" data-col="12">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             {% for row in rows %}
-            <tr id="row-{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }}">
+            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }}">
+
+              <td class="px-4 py-4 align-top col-select" data-val="">
+                <input type="checkbox" class="row-checkbox rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+              </td>
 
               <td class="px-4 py-4 align-top col-source" data-val="{{ row.relative_path|lower }}">
                 <span class="text-sm font-medium text-gray-900 block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
@@ -143,6 +162,12 @@
                 </span>
               </td>
 
+              <!-- Added Genius display cells -->
+              <td class="px-4 py-4 align-top text-sm col-genius" data-val="{{ row.gn_artist or '' }}">
+                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.gn_artist or '-' }}</span>
+                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.gn_title or '-' }}</span>
+              </td>
+
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
                 <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
                   class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
@@ -182,6 +207,7 @@
                 <div class="flex flex-col gap-2">
                   <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30 disabled:hover:bg-emerald-600">Approve</button>
                   <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
+                  <button onclick="act({{ row.id }}, 'rescan')" class="px-3 py-1 border border-amber-300 text-xs font-semibold rounded text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm">Rescan</button>
                 </div>
               </td>
 
@@ -193,13 +219,20 @@
     </div>
 
     <div class="md:hidden space-y-4" id="mobile-cards-container">
+      <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+        <input type="checkbox" id="select-all-mobile" class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleSelectAll(this.checked)">
+        <span>Select all</span>
+      </label>
       {% for row in rows %}
-      <div id="mrow-{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }}">
+      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-gray-900 break-words">{{ row.filepath.split('/')[-1] }}</p>
-            <p class="text-[11px] text-gray-400 font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
-            <p class="text-xs text-gray-400 mt-1">{{ row.size_human }} · {{ row.duration_human }}</p>
+          <div class="flex items-start gap-3 min-w-0">
+            <input type="checkbox" class="row-checkbox mt-1 rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-gray-900 break-words">{{ row.filepath.split('/')[-1] }}</p>
+              <p class="text-[11px] text-gray-400 font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
+              <p class="text-xs text-gray-400 mt-1">{{ row.size_human }} · {{ row.duration_human }}</p>
+            </div>
           </div>
         </div>
         
@@ -234,6 +267,7 @@
         <div class="flex gap-2">
           <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30">Approve</button>
           <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">Reject</button>
+          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100">Rescan</button>
         </div>
       </div>
       {% endfor %}
@@ -242,6 +276,77 @@
   </div>
 
   <script>
+    const selectedIds = new Set();
+
+    function syncCheckboxStates() {
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.checked = selectedIds.has(parseInt(cb.dataset.id));
+      });
+      document.querySelectorAll('.item-row').forEach(row => {
+        const id = parseInt(row.dataset.id);
+        row.classList.toggle('is-selected', selectedIds.has(id));
+      });
+      updateBulkToolbar();
+    }
+
+    function toggleSelect(id, checked) {
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      syncCheckboxStates();
+    }
+
+    function toggleSelectAll(checked) {
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        if (checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+      });
+      document.getElementById('select-all').checked = checked;
+      const mobileAll = document.getElementById('select-all-mobile');
+      if (mobileAll) mobileAll.checked = checked;
+      syncCheckboxStates();
+    }
+
+    function clearSelection() {
+      selectedIds.clear();
+      const selAll = document.getElementById('select-all');
+      const selAllMobile = document.getElementById('select-all-mobile');
+      if (selAll) selAll.checked = false;
+      if (selAllMobile) selAllMobile.checked = false;
+      syncCheckboxStates();
+    }
+
+    function updateBulkToolbar() {
+      const toolbar = document.getElementById('bulk-toolbar');
+      const count = document.getElementById('selected-count');
+      if (selectedIds.size > 0) {
+        toolbar.classList.remove('hidden');
+        toolbar.classList.add('flex');
+        count.textContent = selectedIds.size;
+      } else {
+        toolbar.classList.add('hidden');
+        toolbar.classList.remove('flex');
+      }
+    }
+
+    function removeRowFromDom(id) {
+      const rowMain = document.getElementById(`row-${id}`);
+      const rowMobile = document.getElementById(`mrow-${id}`);
+      if (rowMain) rowMain.remove();
+      if (rowMobile) rowMobile.remove();
+      selectedIds.delete(id);
+
+      const countBadge = document.getElementById('pending-count');
+      if (countBadge) {
+        let num = parseInt(countBadge.innerText) || 0;
+        if (num > 0) {
+          num -= 1;
+          countBadge.innerText = num;
+          if (num === 0) showEmptyState();
+        }
+      }
+    }
+
     async function act(id, action, isMobile) {
       if (action === 'approve') {
         const prefix = isMobile ? '-m-' : '-';
@@ -259,23 +364,64 @@
 
       const res = await fetch(`/api/${action}/${id}`, { method: "POST" });
       if (res.ok) {
-        const rowMain = document.getElementById(`row-${id}`);
-        const rowMobile = document.getElementById(`mrow-${id}`);
-        if (rowMain) rowMain.remove();
-        if (rowMobile) rowMobile.remove();
-
-        const countBadge = document.getElementById('pending-count');
-        if (countBadge) {
-           let num = parseInt(countBadge.innerText) || 0;
-           if (num > 0) {
-             num -= 1;
-             countBadge.innerText = num;
-             if (num === 0) showEmptyState();
-           }
-        }
+        removeRowFromDom(id);
+        syncCheckboxStates();
       } else {
         const data = await res.json();
         alert(data.error || "Action failed");
+      }
+    }
+
+    async function bulkAct(action) {
+      if (selectedIds.size === 0) return;
+      const ids = Array.from(selectedIds);
+
+      if (action === 'approve') {
+        for (const id of ids) {
+          const artistEl = document.getElementById(`artist-${id}`) || document.getElementById(`artist-m-${id}`);
+          const titleEl = document.getElementById(`title-${id}`) || document.getElementById(`title-m-${id}`);
+          const albumEl = document.getElementById(`album-${id}`) || document.getElementById(`album-m-${id}`);
+          if (artistEl || titleEl || albumEl) {
+            try {
+              await fetch(`/api/edit/${id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  artist: artistEl ? artistEl.value.trim() : undefined,
+                  title: titleEl ? titleEl.value.trim() : undefined,
+                  album: albumEl ? albumEl.value.trim() : undefined,
+                })
+              });
+            } catch (err) {}
+          }
+        }
+      }
+
+      const res = await fetch(`/api/${action}-batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+
+      if (!res.ok) {
+        alert("Bulk action failed to run.");
+        return;
+      }
+
+      const data = await res.json();
+      const failures = [];
+      for (const id of ids) {
+        const result = data.results && data.results[id];
+        if (result && result.ok) {
+          removeRowFromDom(id);
+        } else {
+          failures.push(id);
+        }
+      }
+      syncCheckboxStates();
+
+      if (failures.length > 0) {
+        alert(`${failures.length} item(s) could not be processed (check they still exist / aren't unreadable).`);
       }
     }
 
@@ -286,6 +432,8 @@
         const res = await fetch('/api/purge', { method: 'POST' });
         if (res.ok) {
           document.querySelectorAll('.item-row').forEach(row => row.remove());
+          selectedIds.clear();
+          updateBulkToolbar();
           const countBadge = document.getElementById('pending-count');
           if (countBadge) countBadge.innerText = '0';
           showEmptyState();
@@ -352,11 +500,14 @@
       });
     }
 
+    // Updated columns array indices and tracking to incorporate Genius
     const columns = [
+      { id: 'col-select', label: 'Select', default: true },
       { id: 'col-source', label: 'Source File', default: true },
       { id: 'col-preview', label: 'Preview', default: true },
       { id: 'col-songrec', label: 'SongRec', default: false },
       { id: 'col-acoustid', label: 'AcoustID', default: false },
+      { id: 'col-genius', label: 'Genius', default: false },
       { id: 'col-title', label: 'Title', default: true },
       { id: 'col-artist', label: 'Artist', default: true },
       { id: 'col-album', label: 'Album', default: true },

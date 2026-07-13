@@ -20,8 +20,6 @@ app = Flask(__name__)
 
 
 def load_scan_roots():
-    """Mirrors recognize.py's loader - used here only to validate that
-    audio-streaming requests stay within known, expected directories."""
     if not SCAN_ROOTS_FILE.is_file():
         return []
     roots = []
@@ -40,29 +38,26 @@ def allowed_roots():
 
 
 def migrate_schema(conn):
+    """Parity system mapping required columns dynamically for seamless expansion."""
+    required_columns = {
+        "filesize": "INTEGER",
+        "duration": "REAL",
+        "filehash": "TEXT",
+        "sr_artist": "TEXT",
+        "sr_title": "TEXT",
+        "sr_album": "TEXT",
+        "ac_artist": "TEXT",
+        "ac_title": "TEXT",
+        "ac_score": "REAL",
+        "gn_artist": "TEXT",
+        "gn_title": "TEXT",
+        "agreement": "REAL",
+        "error": "TEXT"
+    }
     cols = {row[1] for row in conn.execute("PRAGMA table_info(queue)")}
-    if "filesize" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN filesize INTEGER")
-    if "duration" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN duration REAL")
-    if "filehash" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN filehash TEXT")
-    if "sr_artist" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_artist TEXT")
-    if "sr_title" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_title TEXT")
-    if "sr_album" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN sr_album TEXT")
-    if "ac_artist" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_artist TEXT")
-    if "ac_title" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_title TEXT")
-    if "ac_score" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN ac_score REAL")
-    if "agreement" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN agreement REAL")
-    if "error" not in cols:
-        conn.execute("ALTER TABLE queue ADD COLUMN error TEXT")
+    for col_name, col_type in required_columns.items():
+        if col_name not in cols:
+            conn.execute(f"ALTER TABLE queue ADD COLUMN {col_name} {col_type}")
     conn.commit()
 
 
@@ -149,8 +144,6 @@ def human_duration(seconds):
 
 
 def relative_source(filepath_str):
-    """Shows which configured scan root a file came from, e.g.
-    'NOK/_a_trier/song.mp3' instead of the full /mnt/nas-source/... path."""
     p = Path(filepath_str)
     for root in load_scan_roots():
         try:
@@ -158,6 +151,71 @@ def relative_source(filepath_str):
         except ValueError:
             continue
     return filepath_str
+
+
+def _approve_one(conn, item_id):
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return False, "not found"
+    if row["error"]:
+        return False, "Cannot approve unreadable files"
+
+    artist = sanitize_filename(row["artist"]) or "Unknown Artist"
+    album = sanitize_filename(row["album"]) or "Unknown Album"
+    title = sanitize_filename(row["title"]) or "Unknown Title"
+
+    src = Path(row["filepath"])
+    extension = src.suffix
+
+    dest_dir = APPROVED / artist / album
+    dest_file = dest_dir / f"{title}{extension}"
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dest_file))
+    except Exception as e:
+        return False, f"File system move failed: {str(e)}"
+
+    conn.execute("UPDATE queue SET status = 'approved' WHERE id = ?", (item_id,))
+    conn.commit()
+    return True, None
+
+
+def _reject_one(conn, item_id):
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return False, "not found"
+
+    src = Path(row["filepath"])
+    dest = REJECTED / src.name
+    try:
+        shutil.move(str(src), str(dest))
+    except Exception as e:
+        return False, f"Failed to move file to rejected: {str(e)}"
+
+    conn.execute("UPDATE queue SET status = 'rejected' WHERE id = ?", (item_id,))
+    conn.commit()
+    return True, None
+
+
+def _rescan_one(conn, item_id):
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return False, "not found"
+    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+    conn.commit()
+    return True, None
+
+
+def _run_batch(conn, ids, fn):
+    results = {}
+    for item_id in ids:
+        try:
+            ok, err = fn(conn, int(item_id))
+        except (TypeError, ValueError):
+            ok, err = False, "invalid id"
+        results[item_id] = {"ok": ok, "error": err}
+    return results
 
 
 @app.route("/")
@@ -184,7 +242,6 @@ def index():
             d["agreement_human"] = f"{r['agreement'] * 100:.0f}%"
         enriched.append(d)
 
-    # Group exact-duplicate files (same content hash) under one primary row
     grouped_rows = []
     hash_groups = {}
     for r in enriched:
@@ -228,8 +285,6 @@ def scan_status():
 
 @app.route("/api/scan-roots")
 def scan_roots_status():
-    """Read-only visibility into what's currently configured - editing
-    happens by hand in config/scan_roots.txt, not through the UI."""
     return jsonify({"roots": [str(p) for p in load_scan_roots()]})
 
 
@@ -253,48 +308,49 @@ def audio(item_id):
 @app.route("/api/approve/<int:item_id>", methods=["POST"])
 def approve(item_id):
     conn = get_db()
-    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
-    if not row or row["error"]:
-        return jsonify({"error": "Cannot approve unreadable files"}), 400
-
-    artist = sanitize_filename(row["artist"]) or "Unknown Artist"
-    album = sanitize_filename(row["album"]) or "Unknown Album"
-    title = sanitize_filename(row["title"]) or "Unknown Title"
-
-    src = Path(row["filepath"])
-    extension = src.suffix
-
-    dest_dir = APPROVED / artist / album
-    dest_file = dest_dir / f"{title}{extension}"
-
-    try:
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dest_file))
-    except Exception as e:
-        return jsonify({"error": f"File system move failed: {str(e)}"}), 500
-
-    conn.execute("UPDATE queue SET status = 'approved' WHERE id = ?", (item_id,))
-    conn.commit()
+    ok, err = _approve_one(conn, item_id)
+    if not ok:
+        return jsonify({"error": err}), 400
     return jsonify({"status": "approved"})
 
 
 @app.route("/api/reject/<int:item_id>", methods=["POST"])
 def reject(item_id):
     conn = get_db()
-    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
-    if not row:
-        return jsonify({"error": "not found"}), 404
-
-    src = Path(row["filepath"])
-    dest = REJECTED / src.name
-    try:
-        shutil.move(str(src), str(dest))
-    except Exception as e:
-        return jsonify({"error": f"Failed to move file to rejected: {str(e)}"}), 500
-
-    conn.execute("UPDATE queue SET status = 'rejected' WHERE id = ?", (item_id,))
-    conn.commit()
+    ok, err = _reject_one(conn, item_id)
+    if not ok:
+        return jsonify({"error": err}), 404
     return jsonify({"status": "rejected"})
+
+
+@app.route("/api/rescan/<int:item_id>", methods=["POST"])
+def rescan(item_id):
+    conn = get_db()
+    ok, err = _rescan_one(conn, item_id)
+    if not ok:
+        return jsonify({"error": err}), 404
+    return jsonify({"status": "rescan_queued"})
+
+
+@app.route("/api/approve-batch", methods=["POST"])
+def approve_batch():
+    ids = (request.get_json() or {}).get("ids", [])
+    conn = get_db()
+    return jsonify({"results": _run_batch(conn, ids, _approve_one)})
+
+
+@app.route("/api/reject-batch", methods=["POST"])
+def reject_batch():
+    ids = (request.get_json() or {}).get("ids", [])
+    conn = get_db()
+    return jsonify({"results": _run_batch(conn, ids, _reject_one)})
+
+
+@app.route("/api/rescan-batch", methods=["POST"])
+def rescan_batch():
+    ids = (request.get_json() or {}).get("ids", [])
+    conn = get_db()
+    return jsonify({"results": _run_batch(conn, ids, _rescan_one)})
 
 
 @app.route("/api/delete/<int:item_id>", methods=["POST"])
