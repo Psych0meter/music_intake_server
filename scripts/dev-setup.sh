@@ -15,16 +15,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WITH_SONGREC=false
-WITH_WHISPER=false
-
-for arg in "$@"; do
-  case "$arg" in
-    --with-songrec) WITH_SONGREC=true ;;
-    --with-whisper) WITH_WHISPER=true ;;
-    *) echo "Unknown flag: $arg" && exit 1 ;;
-  esac
-done
 
 echo "==> Creating directories"
 sudo mkdir -p /opt/music-intake/{app/templates,pipeline,db,config,migrations,scripts}
@@ -36,7 +26,7 @@ echo "==> Copying application and pipeline files"
 cp -r "$REPO_ROOT"/app/* /opt/music-intake/app/
 cp -r "$REPO_ROOT"/pipeline/* /opt/music-intake/pipeline/
 cp -r "$REPO_ROOT"/migrations/* /opt/music-intake/migrations/
-cp "$REPO_ROOT"/migrate.py /opt/music-intake/scripts/migrate.py
+cp "$REPO_ROOT"/migrate.py /opt/music-intake/migrate.py
 cp "$REPO_ROOT"/config/beets-config.yaml /opt/music-intake/config/
 
 [ -f /opt/music-intake/config/scan_roots.txt ] || cp "$REPO_ROOT"/config/scan_roots.txt.example /opt/music-intake/config/scan_roots.txt
@@ -54,40 +44,33 @@ source /opt/music-intake/venv/bin/activate
 pip install --upgrade pip -q
 pip install -r "$REPO_ROOT"/requirements.txt -q
 
-if $WITH_WHISPER; then
-  echo "==> Installing faster-whisper (lyrics fallback)"
-  pip install faster-whisper -q
-fi
 deactivate
 
-if $WITH_SONGREC; then
-  if command -v songrec >/dev/null 2>&1; then
-    echo "==> SongRec already installed, skipping build"
-  else
-    echo "==> Building SongRec from source (this takes a while)"
-    sudo apt-get install -y -qq \
-      cmake pkg-config libavcodec-dev libavformat-dev libavutil-dev \
-      libfftw3-dev libgcrypt20-dev libboost-dev libasound2-dev \
-      libpipewire-0.3-dev libclang-dev libpulse-dev libgtk-4-dev \
-      libsoup-3.0-dev libadwaita-1-dev blueprint-compiler libdbus-1-dev \
-      gettext intltool > /dev/null
-    if ! command -v cargo >/dev/null 2>&1; then
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-      # shellcheck disable=SC1091
-      source "$HOME/.cargo/env"
-    fi
-    rm -rf /tmp/songrec
-    git clone -q https://github.com/marin-m/SongRec.git /tmp/songrec
-    (cd /tmp/songrec && cargo build --release --no-default-features -F ffmpeg,pulse,pipewire,mpris)
-    sudo install -m 755 /tmp/songrec/target/release/songrec /usr/local/bin/songrec
-    rm -rf /tmp/songrec
+if command -v songrec >/dev/null 2>&1; then
+  echo "==> SongRec already installed, skipping build"
+else
+  echo "==> Building SongRec from source (this takes a while)"
+  sudo apt-get install -y -qq \
+    cmake pkg-config libavcodec-dev libavformat-dev libavutil-dev \
+    libfftw3-dev libgcrypt20-dev libboost-dev libasound2-dev \
+    libpipewire-0.3-dev libclang-dev libpulse-dev libgtk-4-dev \
+    libsoup-3.0-dev libadwaita-1-dev blueprint-compiler libdbus-1-dev \
+    gettext intltool > /dev/null
+  if ! command -v cargo >/dev/null 2>&1; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
   fi
+  rm -rf /tmp/songrec
+  git clone -q https://github.com/marin-m/SongRec.git /tmp/songrec
+  (cd /tmp/songrec && cargo build --release --no-default-features -F ffmpeg,pulse,pipewire,mpris)
+  sudo install -m 755 /tmp/songrec/target/release/songrec /usr/local/bin/songrec
+  rm -rf /tmp/songrec
 fi
 
 echo "==> Running database migrations"
-# Executed now that the Virtual Environment is ready and populated
-/opt/music-intake/venv/bin/python3 /opt/music-intake/scripts/migrate.py --status
-/opt/music-intake/venv/bin/python3 /opt/music-intake/scripts/migrate.py
+/opt/music-intake/venv/bin/python3 /opt/music-intake/migrate.py --status
+/opt/music-intake/venv/bin/python3 /opt/music-intake/migrate.py
 
 echo ""
 echo "==> Done. Next steps:"

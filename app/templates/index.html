@@ -66,8 +66,11 @@
 
     <div id="scan-bar-wrap" class="mb-6 hidden">
       <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
-        <span id="scan-label">Scanning...</span>
-        <span id="scan-percent">0%</span>
+        <span id="scan-label" class="font-medium">Scanning...</span>
+        <div class="flex items-center gap-3">
+          <span id="scan-percent" class="font-mono">0%</span>
+          <button id="pause-btn" onclick="togglePause()" class="px-2 py-0.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold transition-colors">Pause</button>
+        </div>
       </div>
       <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
         <div id="scan-bar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%;"></div>
@@ -538,6 +541,35 @@
         colCheckboxesContainer.appendChild(label);
       });
       applyColumnVisibility();
+    }
+
+    let isPaused = false;
+
+    async function togglePause() {
+      const action = isPaused ? 'resume' : 'pause';
+      await fetch(`/api/scan/${action}`, { method: 'POST' });
+      pollScanStatus(); // Immediately refresh UI
+    }
+
+    // Inside your existing pollScanStatus() function, update the DOM updates:
+    if (data.scanning || data.is_paused) {
+      wrap.classList.remove('hidden');
+      bar.style.width = `${data.percent}%`;
+      percent.textContent = `${data.percent}% (${data.processed}/${data.total})`;
+      
+      if (data.is_paused) {
+        isPaused = true;
+        document.getElementById('pause-btn').textContent = 'Resume';
+        label.textContent = `⏸ Paused: ${data.current_file ? data.current_file.split('/').pop() : ''}`;
+        bar.classList.replace('bg-indigo-500', 'bg-amber-400');
+      } else {
+        isPaused = false;
+        document.getElementById('pause-btn').textContent = 'Pause';
+        label.textContent = `Scanning: ${data.current_file ? data.current_file.split('/').pop() : ''}`;
+        bar.classList.replace('bg-amber-400', 'bg-indigo-500');
+      }
+    } else {
+      wrap.classList.add('hidden');
     }
   </script>
 </body>

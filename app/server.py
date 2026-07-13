@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import hashlib
 import math
+import os
 import re
 import shutil
 import sqlite3
@@ -11,7 +12,8 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
-DB_PATH = APP_ROOT / "db" / "queue.sqlite3"
+# Safely pull from environment, fallback to default path
+DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
 
 NAS_INTAKE = Path("/mnt/nas-intake")
 APPROVED = NAS_INTAKE / "approved"
@@ -39,10 +41,6 @@ def allowed_roots():
 
 
 def get_db():
-    """Assumes migrations have already been applied by scripts/migrate.py
-    (run manually, or automatically via the music-migrate.service systemd
-    unit before this service starts) - this just opens a connection,
-    it does not create or alter any schema itself."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -159,7 +157,6 @@ def index():
     search_query = request.args.get("q", "").strip()
     show_unrecognized = request.args.get("unrecognized", "0") == "1"
     
-    # Sorting Configuration Parameters
     sort_by = request.args.get("sort", "confidence")
     order = request.args.get("order", "asc")
 
@@ -167,8 +164,6 @@ def index():
         page = 1
 
     conn = get_db()
-
-    # Dynamic SQL Condition Construction
     query_conditions = ["status = 'pending'"]
     query_params = []
 
@@ -184,7 +179,6 @@ def index():
 
     where_clause = " WHERE " + " AND ".join(query_conditions)
 
-    # Secure Parameter Columns Whitelist to stop structural SQL Injection vectors dead
     sort_map = {
         "source": "filepath",
         "songrec": "sr_artist",
@@ -200,7 +194,6 @@ def index():
     db_column = sort_map.get(sort_by, "confidence")
     db_order = "ASC" if order.lower() == "asc" else "DESC"
 
-    # Total matching entries calculation bound
     total_count = conn.execute(
         f"SELECT COUNT(*) FROM queue {where_clause}", query_params
     ).fetchone()[0]
@@ -210,7 +203,6 @@ def index():
         page = total_pages
     offset = (page - 1) * per_page
 
-    # High Speed Executable query block incorporating explicit sort targets
     final_query = f"""
         SELECT * FROM queue 
         {where_clause} 
@@ -267,13 +259,41 @@ def scan_status():
     row = conn.execute("SELECT * FROM scan_status WHERE id = 1").fetchone()
     conn.close()
     if not row or not row["total"]:
-        return jsonify({"total": 0, "processed": 0, "percent": 100, "current_file": None, "scanning": False})
+        return jsonify({
+            "total": 0, "processed": 0, "percent": 100, 
+            "current_file": None, "scanning": False, "is_paused": False
+        })
     total = row["total"]
     processed = row["processed"] or 0
+    
+    # Check if column exists in the Row keys to prevent Attribute/KeyErrors
+    is_paused = bool(row["is_paused"]) if "is_paused" in row.keys() else False
+
     return jsonify({
-        "total": total, "processed": processed, "percent": int((processed / total) * 100) if total else 100,
-        "current_file": row["current_file"], "scanning": processed < total
+        "total": total, 
+        "processed": processed, 
+        "percent": int((processed / total) * 100) if total else 100,
+        "current_file": row["current_file"], 
+        "scanning": processed < total,
+        "is_paused": is_paused
     })
+
+@app.route("/api/scan/pause", methods=["POST"])
+def pause_scan():
+    conn = get_db()
+    conn.execute("UPDATE scan_status SET is_paused = 1 WHERE id = 1")
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "paused"})
+
+
+@app.route("/api/scan/resume", methods=["POST"])
+def resume_scan():
+    conn = get_db()
+    conn.execute("UPDATE scan_status SET is_paused = 0 WHERE id = 1")
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "resumed"})
 
 
 @app.route("/api/audio/<int:item_id>")
@@ -379,7 +399,7 @@ def purge_queue():
     conn = get_db()
     try:
         conn.execute("DELETE FROM queue WHERE status = 'pending'")
-        conn.execute("UPDATE scan_status SET total = 0, processed = 0, current_file = NULL WHERE id = 1")
+        conn.execute("UPDATE scan_status SET total = 0, processed = 0, current_file = NULL, is_paused = 0 WHERE id = 1")
         conn.commit()
         return jsonify({"status": "purged"})
     except Exception as e:

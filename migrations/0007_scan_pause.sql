@@ -1,0 +1,1 @@
+ALTER TABLE scan_status ADD COLUMN is_paused BOOLEAN DEFAULT 0;

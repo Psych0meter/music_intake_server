@@ -452,6 +452,10 @@ def process_file(conn, filepath):
 def scan_loop(poll_seconds=15):
     conn = get_db()
     while True:
+        status_row = conn.execute("SELECT is_paused FROM scan_status WHERE id = 1").fetchone()
+        if status_row and status_row["is_paused"]:
+            time.sleep(5)  # Sleep and try again without progressing
+            continue
         try:
             all_files = discover_files()
             already_done = [f for f in all_files if already_queued(conn, f)]
