@@ -17,34 +17,41 @@
     .item-row.is-selected { background-color: #eef2ff; }
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
+
+    /* Fixed header */
+    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; }
+
+    /* Duplicate modal */
+    #duplicate-modal { display: none; }
+    #duplicate-modal.show { display: flex; }
+
+    /* Mobile column fix */
+    @media (max-width: 767px) {
+      .col-title, .col-artist, .col-album { display: block !important; }
+    }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800" id="body-container">
 
   <div class="w-full px-6 py-8">
-
     <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-200 pb-5 gap-4">
       <div>
         <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Music Intake Review</h1>
         <p class="text-sm text-gray-500 mt-1">Verify metadata fingerprints and clear the incoming processing queue.</p>
       </div>
-
       <div class="flex flex-wrap items-center gap-3">
         <div class="relative">
           <input type="text" id="text-filter" placeholder="Search & press Enter..." value="{{ search_query }}"
                  class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-64 px-3 py-2 shadow-sm">
         </div>
-
         <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 shadow-sm transition">
           <input type="checkbox" id="toggle-unrecognized" class="rounded text-indigo-600 focus:ring-indigo-500" {% if show_unrecognized %}checked{% endif %}>
           <span>Show Unrecognized</span>
         </label>
-
         <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 shadow-sm transition">
           <input type="checkbox" id="toggle-duplicates" class="rounded text-indigo-600 focus:ring-indigo-500" {% if show_duplicates %}checked{% endif %}>
           <span>Show Duplicates Only</span>
         </label>
-
         <div class="relative inline-block text-left">
           <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none">
             Columns ▾
@@ -53,18 +60,17 @@
             <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
           </div>
         </div>
-
+        <a href="/history" class="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition">History</a>
+        <a href="/logs" class="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition">Logs</a>
         <button onclick="purgeDB()" class="text-red-600 hover:text-white hover:bg-red-600 border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
           Purge Queue
         </button>
-
         <div class="bg-indigo-50 text-indigo-700 font-medium px-4 py-2 rounded-lg text-sm border border-indigo-100 shadow-sm">
           Matching: <span class="font-bold" id="pending-count">{{ total_count }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Scan Progress Bar Section -->
     <div id="scan-bar-wrap" class="mb-6 hidden">
       <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
         <span id="scan-label" class="font-medium">Scanning...</span>
@@ -96,8 +102,8 @@
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden hidden md:block" id="main-table-container">
       <div class="overflow-x-auto">
         <table class="w-full table-auto text-left border-collapse" id="review-table">
-          <thead>
-            <tr class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
+          <thead class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
+            <tr>
               <th class="px-4 py-4 col-select">
                 <input type="checkbox" id="select-all" class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleSelectAll(this.checked)">
               </th>
@@ -117,7 +123,7 @@
           </thead>
           <tbody class="divide-y divide-gray-100">
             {% for row in rows %}
-            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }} {{ 'row-duplicate' if row.duplicates else '' }}">
+            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
               <td class="px-4 py-4 align-top col-select">
                 <input type="checkbox" class="row-checkbox rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
@@ -127,19 +133,15 @@
                 {% if row.error %}
                   <span class="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">⚠ Read Error</span>
                 {% endif %}
-                {% if row.duplicates %}
+                {% if row.is_duplicate %}
                   <div class="mt-3 border-l-2 border-rose-300 pl-2">
-                    <span class="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Exact Duplicates</span>
-                    <ul class="mt-1 space-y-1">
-                    {% for dup in row.duplicates %}
-                      <li id="row-{{ dup.id }}" class="flex items-center justify-between gap-2 bg-rose-50 px-2 py-1 rounded border border-rose-100">
-                        <span class="text-xs text-rose-800 break-all truncate max-w-[120px]" title="{{ dup.filepath }}">{{ dup.filepath.split('/')[-1] }}</span>
-                        <button onclick="act({{ dup.id }}, 'delete')" title="Delete File" class="text-rose-500 hover:text-white hover:bg-rose-500 transition-colors p-1 bg-white rounded shadow-sm border border-rose-200 shrink-0">
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                      </li>
-                    {% endfor %}
-                    </ul>
+                    <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium mt-1 flex items-center gap-1">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                      </svg>
+                      View duplicates
+                    </button>
                   </div>
                 {% endif %}
               </td>
@@ -204,10 +206,9 @@
       </div>
     </div>
 
-    <!-- Mobile Cards -->
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
-      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if row.duplicates else '' }}">
+      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex items-start gap-3 min-w-0">
             <input type="checkbox" class="row-checkbox mt-1 rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
@@ -219,21 +220,14 @@
           </div>
         </div>
 
-        {% if row.duplicates %}
+        {% if row.is_duplicate %}
           <div class="mb-3 border border-rose-200 bg-rose-50 rounded p-2">
-             <span class="text-[10px] font-bold text-rose-600 uppercase">Exact Duplicates</span>
-             <ul class="mt-1 space-y-1">
-             {% for dup in row.duplicates %}
-               <li id="mrow-{{ dup.id }}" class="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded shadow-sm border border-rose-100">
-                 <span class="text-xs text-rose-800 truncate">{{ dup.filepath.split('/')[-1] }}</span>
-                 <button onclick="act({{ dup.id }}, 'delete')" class="text-rose-500 hover:text-rose-700">
-                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                   </svg>
-                 </button>
-               </li>
-             {% endfor %}
-             </ul>
+             <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+               </svg>
+               View duplicates
+             </button>
           </div>
         {% endif %}
 
@@ -260,7 +254,6 @@
       {% endfor %}
     </div>
 
-    <!-- Pagination -->
     <div class="flex items-center justify-between mt-6 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
       <div class="text-sm text-gray-600">
         Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span> pages
@@ -273,9 +266,25 @@
     {% endif %}
   </div>
 
+  <!-- Duplicate Details Modal -->
+  <div id="duplicate-modal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-gray-900">Duplicate Track Details</h2>
+        <button onclick="closeDuplicateModal()" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="duplicate-content"></div>
+    </div>
+  </div>
+
   <script>
     const selectedIds = new Set();
     let isPaused = false;
+    let scanStartTime = null;
 
     // Restore filter states from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -318,7 +327,6 @@
       const currentParams = new URLSearchParams(window.location.search);
       const currentSort = currentParams.get('sort') || 'confidence';
       const currentOrder = currentParams.get('order') || 'asc';
-
       let newOrder = 'asc';
       if (currentSort === key && currentOrder === 'asc') {
         newOrder = 'desc';
@@ -461,7 +469,6 @@
       if (res.ok) window.location.reload();
     }
 
-    // Scan status monitoring
     async function pollScanStatus() {
       try {
         const res = await fetch('/api/scan-status');
@@ -481,6 +488,16 @@
           bar.style.width = `${scanData.percent}%`;
           percent.textContent = `${scanData.percent}% (${scanData.processed}/${scanData.total})`;
 
+          // Calculate remaining time
+          const remaining = scanData.total - scanData.processed;
+          const elapsed = scanData.processed;
+          const now = Date.now() / 1000;
+          const startTime = scanData.start_time ? new Date(scanData.start_time).getTime() / 1000 : now - (elapsed > 0 ? elapsed / (scanData.percent / 100 || 1) : 0);
+          const elapsedSeconds = now - startTime;
+          const rate = elapsedSeconds > 0 ? elapsed / elapsedSeconds : 0;
+          const etaSeconds = remaining / (rate > 0 ? rate : 1);
+          const etaMinutes = Math.ceil(etaSeconds / 60);
+
           if (scanData.is_paused) {
             isPaused = true;
             pauseBtn.textContent = 'Resume';
@@ -489,7 +506,8 @@
           } else {
             isPaused = false;
             pauseBtn.textContent = 'Pause';
-            label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
+            const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)} hours`;
+            label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
             bar.classList.replace('bg-amber-400', 'bg-indigo-500');
           }
         } else {
@@ -499,7 +517,6 @@
         console.error("Failed parsing scan telemetry updates:", err);
       }
     }
-    pollScanStatus();
     setInterval(pollScanStatus, 2000);
 
     async function togglePause() {
@@ -510,6 +527,80 @@
       } else {
         console.error(`Error requesting background scan run-state ${action}`);
       }
+    }
+
+    async function showDuplicateModal(mainId) {
+      const row = document.getElementById(`row-${mainId}`) || document.getElementById(`mrow-${mainId}`);
+      if (!row) return;
+
+      const modal = document.getElementById('duplicate-modal');
+      const content = document.getElementById('duplicate-content');
+
+      // Show loading state
+      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Loading duplicates...</p></div>';
+      modal.classList.add('show');
+
+      try {
+        // Fetch duplicates from API
+        const res = await fetch(`/api/duplicates/${mainId}`);
+        if (!res.ok) throw new Error('Failed to load duplicates');
+
+        const data = await res.json();
+        const main = data.main;
+        const duplicates = data.duplicates || [];
+
+        let html = `
+          <div class="space-y-4">
+            <h3 class="text-lg font-semibold text-gray-900">Main Track</h3>
+            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <p class="font-medium">${main.filepath.split('/').pop()}</p>
+              <p class="text-sm text-gray-500">${main.filepath}</p>
+              <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
+              <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
+            </div>
+        `;
+
+        if (duplicates.length > 0) {
+          html += `
+            <h3 class="text-lg font-semibold text-gray-900 mt-6">Duplicate Tracks (${duplicates.length})</h3>
+            <div class="space-y-3">
+          `;
+
+          duplicates.forEach(dup => {
+            html += `
+              <div class="bg-rose-50 rounded-lg p-4 border border-rose-200">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                  <div class="flex-1">
+                    <p class="font-medium">${dup.filepath.split('/').pop()}</p>
+                    <p class="text-sm text-gray-600">${dup.filepath}</p>
+                    <p class="text-xs text-gray-500 mt-1">${dup.size_human} · ${dup.duration_human}</p>
+                    <p class="text-xs mt-1"><strong>Hash:</strong> ${dup.filehash?.substring(0, 16)}...</p>
+                  </div>
+                </div>
+                <audio controls class="w-full mt-2"><source src="/api/audio/${dup.id}"></audio>
+                <div class="flex gap-2 mt-3">
+                  <button onclick="act(${dup.id}, 'delete'); closeDuplicateModal()" class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-rose-600 hover:bg-rose-700">Delete</button>
+                  <button onclick="act(${dup.id}, 'approve'); closeDuplicateModal()" class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700">Keep</button>
+                </div>
+              </div>
+            `;
+          });
+
+          html += `</div></div>`;
+        } else {
+          html += `</div>`;
+        }
+
+        content.innerHTML = html;
+      } catch (err) {
+        content.innerHTML = `<div class="text-rose-600 p-4">Error loading duplicates: ${err.message}</div>`;
+        console.error('Failed to load duplicates:', err);
+      }
+    }
+
+    function closeDuplicateModal() {
+      document.getElementById('duplicate-modal').classList.remove('show');
+      window.location.reload();
     }
 
     // Column visibility configurations

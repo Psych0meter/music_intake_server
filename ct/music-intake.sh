@@ -14,6 +14,8 @@ source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxV
 # bash -c "$(curl -fsSL https://raw.githubusercontent.com/Psych0meter/music_intake_server/main/ct/music-intake.sh)"
 # ---------------------------------------------------------------------------
 
+# Capture the user's explicit environment variable before defaulting
+USER_BRANCH="${BRANCH}"
 BRANCH="${BRANCH:-main}"
 REPO="https://github.com/Psych0meter/music_intake_server"
 INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/Psych0meter/music_intake_server/${BRANCH}/install/music-intake-install.sh"
@@ -61,20 +63,30 @@ function update_script() {
 
   msg_info "Updating ${APP} Source"
   cd /opt/music-intake-src
-  INSTALLED_BRANCH=$(cat /opt/music-intake_version.txt 2>/dev/null | cut -d'@' -f1)
-  INSTALLED_BRANCH="${INSTALLED_BRANCH:-main}"
+
+  # Resolve target branch: Prioritize explicit env variable, then fall back to tracking file
+  if [[ -n "${USER_BRANCH}" ]]; then
+    TARGET_BRANCH="${USER_BRANCH}"
+    # Persist the target branch back to the version file so future automated runs stay on it
+    echo "${TARGET_BRANCH}" > /opt/music-intake_version.txt
+  else
+    TARGET_BRANCH=$(cat /opt/music-intake_version.txt 2>/dev/null | cut -d'@' -f1)
+    TARGET_BRANCH="${TARGET_BRANCH:-main}"
+  fi
+
   git fetch origin
 
-  if git show-ref --verify --quiet "refs/remotes/origin/${INSTALLED_BRANCH}"; then
-    git checkout "${INSTALLED_BRANCH}"
-    git reset --hard "origin/${INSTALLED_BRANCH}"
+  if git show-ref --verify --quiet "refs/remotes/origin/${TARGET_BRANCH}"; then
+    git checkout "${TARGET_BRANCH}"
+    git reset --hard "origin/${TARGET_BRANCH}"
   else
-    msg_warn "Installed branch ${INSTALLED_BRANCH} no longer exists, switching to main"
+    msg_warn "Target branch ${TARGET_BRANCH} no longer exists, switching to main"
     git checkout main
     git reset --hard origin/main
-    INSTALLED_BRANCH="main"
+    TARGET_BRANCH="main"
+    echo "main" > /opt/music-intake_version.txt
   fi
-  msg_ok "Updated source (branch: ${INSTALLED_BRANCH})"
+  msg_ok "Updated source (branch: ${TARGET_BRANCH})"
 
   msg_info "Deploying Application Files"
   rm -rf /opt/music-intake/app/*

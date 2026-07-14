@@ -13,9 +13,11 @@ Optimizations:
 - Improved error handling and connection management
 - Cached file listings to avoid redundant scans
 - Added file modification time tracking to skip unchanged files
+- Proper logging to files
 """
 import hashlib
 import json
+import logging
 import os
 import socket
 import sqlite3
@@ -24,13 +26,14 @@ import sys
 import tempfile
 import time
 from difflib import SequenceMatcher
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import acoustid
 import mutagen
 import requests
 
-socket.setdefaulttimeout(15)  # Prevents any network lookup from hanging the scanner loop
+socket.setdefaulttimeout(15)
 
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
@@ -40,11 +43,37 @@ GENIUS_ACCESS_TOKEN = os.environ.get("GENIUS_ACCESS_TOKEN")
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
-_whisper_model = None  # lazy-loaded so startup stays fast when this path never fires
+_whisper_model = None
 SUPPORTED_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".wav"}
 
+# --- Logging Setup ---
+def setup_logging():
+    logger = logging.getLogger('recognize')
+    logger.setLevel(logging.INFO)
+
+    log_dir = Path("/opt/music-intake/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # File handler with rotation
+    handler = RotatingFileHandler(
+        log_dir / "recognize.log",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(console_handler)
+
+    return logger
+
+logger = setup_logging()
+
+# --- Database ---
 def get_db():
-    """Get database connection. Schema must be migrated separately via migrate.py"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -53,9 +82,8 @@ def get_db():
 
 def load_scan_roots():
     if not SCAN_ROOTS_FILE.is_file():
-        print(f"[config] {SCAN_ROOTS_FILE} does not exist - nothing to scan", file=sys.stderr)
+        logger.error(f"Config file {SCAN_ROOTS_FILE} does not exist - nothing to scan")
         return []
-
     roots = []
     for line in SCAN_ROOTS_FILE.read_text().splitlines():
         line = line.strip()
@@ -65,11 +93,10 @@ def load_scan_roots():
         if p.is_dir():
             roots.append(p.resolve())
         else:
-            print(f"[config] scan root does not exist, skipping: {line}", file=sys.stderr)
+            logger.warning(f"Scan root does not exist, skipping: {line}")
     return roots
 
 def discover_files():
-    """Discover all supported audio files in scan roots."""
     files = []
     for root in load_scan_roots():
         try:
@@ -78,30 +105,24 @@ def discover_files():
                 if f.is_file() and f.suffix.lower() in SUPPORTED_EXT
             )
         except Exception as e:
-            print(f"[discover] Error scanning {root}: {e}", file=sys.stderr)
+            logger.error(f"Error scanning {root}: {e}")
     return files
 
 def batch_already_queued(conn, filepaths):
-    """Batch check which files are already in the queue - much faster than individual queries."""
     if not filepaths:
         return set()
-
     path_strs = [str(f) for f in filepaths]
     placeholders = ",".join("?" * len(path_strs))
     query = f"SELECT filepath, error FROM queue WHERE filepath IN ({placeholders})"
-
     rows = conn.execute(query, path_strs).fetchall()
     return {row["filepath"] for row in rows if not row["error"]}
 
 def batch_get_mtimes(conn, filepaths):
-    """Batch get modification times for already queued files."""
     if not filepaths:
         return {}
-
     path_strs = [str(f) for f in filepaths]
     placeholders = ",".join("?" * len(path_strs))
     query = f"SELECT filepath, mtime FROM queue WHERE filepath IN ({placeholders})"
-
     rows = conn.execute(query, path_strs).fetchall()
     return {row["filepath"]: row["mtime"] for row in rows}
 
@@ -117,32 +138,28 @@ def update_scan_status(conn, total, processed, current_file):
     conn.commit()
 
 def is_paused(conn):
-    """Check if scanning is paused."""
     row = conn.execute("SELECT is_paused FROM scan_status WHERE id = 1").fetchone()
     return row and row["is_paused"] == 1
 
+# --- Identification Functions ---
 def songrec_identify(filepath):
     try:
         result = subprocess.run(
             ["songrec", "recognize", "-j", str(filepath)],
             capture_output=True, text=True, timeout=60
         )
-
         if not result.stdout or not result.stdout.strip():
-            print(f"[songrec] No acoustic match found for {filepath}")
+            logger.info(f"No acoustic match found for {filepath}")
             return None, None, None
-
         try:
             data = json.loads(result.stdout)
             track = data.get("track", {})
         except json.JSONDecodeError:
-            print(f"[songrec] Failed to parse response payload: {result.stdout}")
+            logger.error(f"Failed to parse SongRec response: {result.stdout}")
             return None, None, None
-
         artist = track.get("subtitle")
         title = track.get("title")
         album = None
-
         for section in track.get("sections", []):
             for item in section.get("metadata", []):
                 if item.get("title") == "Album":
@@ -150,29 +167,28 @@ def songrec_identify(filepath):
                     break
         return artist, title, album
     except Exception as e:
-        print(f"[songrec] failed for {filepath}: {e}", file=sys.stderr)
+        logger.error(f"SongRec failed for {filepath}: {e}")
         return None, None, None
 
 def acoustid_lookup(filepath):
     if not ACOUSTID_API_KEY:
-        print("[acoustid] ACOUSTID_API_KEY is not set - skipping lookup", file=sys.stderr)
+        logger.warning("ACOUSTID_API_KEY is not set - skipping lookup")
         return None, None, 0.0
     try:
         results = acoustid.match(ACOUSTID_API_KEY, str(filepath))
         for score, rid, title, artist in results:
             return artist, title, score
     except acoustid.NoBackendError:
-        print("[acoustid] chromaprint/fpcalc not found on PATH", file=sys.stderr)
+        logger.error("chromaprint/fpcalc not found on PATH")
     except acoustid.FingerprintGenerationError as e:
-        print(f"[acoustid] fingerprinting failed for {filepath}: {e}", file=sys.stderr)
+        logger.error(f"Fingerprinting failed for {filepath}: {e}")
     except acoustid.WebServiceError as e:
-        print(f"[acoustid] API error for {filepath}: {e}", file=sys.stderr)
+        logger.error(f"AcoustID API error for {filepath}: {e}")
     except Exception as e:
-        print(f"[acoustid] failed for {filepath}: {e}", file=sys.stderr)
+        logger.error(f"AcoustID failed for {filepath}: {e}")
     return None, None, 0.0
 
 def itunes_verify(artist, title):
-    """Verify artist/title combination against iTunes API."""
     if not artist or not title:
         return False
     try:
@@ -193,21 +209,19 @@ def itunes_verify(artist, title):
         ]
         return bool(sims) and (sum(sims) / len(sims)) >= 0.6
     except Exception as e:
-        print(f"[itunes] verify failed for {artist} - {title}: {e}", file=sys.stderr)
+        logger.error(f"iTunes verify failed for {artist} - {title}: {e}")
         return False
 
 def get_whisper_model():
-    """Lazy-load Whisper model."""
     global _whisper_model
     if _whisper_model is None:
         from faster_whisper import WhisperModel
-        print(f"[whisper] Loading model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...", file=sys.stderr)
+        logger.info(f"Loading Whisper model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})")
         _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
-        print("[whisper] Model loaded successfully", file=sys.stderr)
+        logger.info("Whisper model loaded successfully")
     return _whisper_model
 
 def get_sample_windows(duration, window=20, count=3):
-    """Calculate sample windows for transcription."""
     if not duration or duration <= window:
         return [(0, duration or window)]
     fractions = [0.15, 0.5, 0.8][:count]
@@ -218,7 +232,6 @@ def get_sample_windows(duration, window=20, count=3):
     return windows
 
 def transcribe_clip(filepath, offset, duration):
-    """Transcribe a clip from the file."""
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             subprocess.run(
@@ -226,7 +239,6 @@ def transcribe_clip(filepath, offset, duration):
                  "-i", str(filepath), "-ar", "16000", "-ac", "1", tmp.name],
                 capture_output=True, timeout=60, check=True
             )
-
             segments, _ = get_whisper_model().transcribe(
                 tmp.name,
                 vad_filter=True,
@@ -234,20 +246,16 @@ def transcribe_clip(filepath, offset, duration):
                 no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4
             )
-
             text = " ".join(seg.text for seg in segments).strip()
-
             lowercase_text = text.lower()
             if "thank you for watching" in lowercase_text or "subtitles by" in lowercase_text:
                 return ""
-
             return text
     except Exception as e:
-        print(f"[whisper] transcription failed for {filepath} at {offset}s: {e}", file=sys.stderr)
+        logger.error(f"Transcription failed for {filepath} at {offset}s: {e}")
         return ""
 
 def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15):
-    """Transcribe track using multiple sample windows."""
     text_parts = []
     for offset, win in get_sample_windows(duration, window=window, count=max_windows):
         snippet = transcribe_clip(filepath, offset, win)
@@ -258,43 +266,36 @@ def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15)
     return " ".join(text_parts).strip()
 
 def genius_lyrics_search(snippet):
-    """Search Genius for lyrics matching the snippet."""
     if not GENIUS_ACCESS_TOKEN or not snippet:
         return None, None
     try:
         clean_query = " ".join(snippet.split()[:12])
         resp = requests.get(
             "https://api.genius.com/search",
-            params={
-                "q": clean_query,
-                "type": "song"
-            },
+            params={"q": clean_query, "type": "song"},
             headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
             timeout=15,
         )
         hits = resp.json().get("response", {}).get("hits", [])
         if not hits:
             return None, None
-
         for hit in hits:
             if hit.get("type") == "song":
                 result = hit["result"]
                 return result.get("primary_artist", {}).get("name"), result.get("title")
-
         return None, None
     except Exception as e:
-        print(f"[genius] search failed: {e}", file=sys.stderr)
+        logger.error(f"Genius search failed: {e}")
         return None, None
 
 def lyrics_identify(filepath, duration):
-    """Identify track using Whisper transcription + Genius lyrics search."""
     text = transcribe_track(filepath, duration)
     if not text or len(text.split()) < 15:
         return None, None
     return genius_lyrics_search(text)
 
+# --- Tag Writing ---
 def write_tags(filepath, artist, title, album=None):
-    """Write metadata tags to the file."""
     try:
         audio = mutagen.File(filepath, easy=True)
         if audio is None:
@@ -307,10 +308,9 @@ def write_tags(filepath, artist, title, album=None):
             audio["album"] = album
         audio.save()
     except Exception as e:
-        print(f"[tags] Failed to write tags to {filepath}: {e}", file=sys.stderr)
+        logger.error(f"Failed to write tags to {filepath}: {e}")
 
 def compute_filehash(filepath, chunk_size=1024 * 1024):
-    """Compute SHA256 hash of the file."""
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(chunk_size), b""):
@@ -318,7 +318,6 @@ def compute_filehash(filepath, chunk_size=1024 * 1024):
     return h.hexdigest()
 
 def probe_duration(filepath):
-    """Get duration of the audio file."""
     try:
         audio = mutagen.File(filepath)
         return audio.info.length if audio and audio.info else None
@@ -326,13 +325,11 @@ def probe_duration(filepath):
         return None
 
 def similarity(a, b):
-    """Calculate similarity ratio between two strings."""
     if not a or not b:
         return None
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 def best_pair_match(candidates):
-    """Find the best matching pair among candidates."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -347,11 +344,11 @@ def best_pair_match(candidates):
     return best
 
 def process_file(conn, filepath):
-    """Process a single file: fingerprint, identify, tag, and queue."""
     filesize = filepath.stat().st_size
     duration = probe_duration(filepath)
     mtime = filepath.stat().st_mtime
 
+    logger.info(f"Processing: {filepath.name}")
     sr_artist, sr_title, sr_album = songrec_identify(filepath)
     ac_artist, ac_title, score = acoustid_lookup(filepath)
     gn_artist, gn_title = lyrics_identify(filepath, duration) if GENIUS_ACCESS_TOKEN else (None, None)
@@ -426,67 +423,48 @@ def process_file(conn, filepath):
         "ac_score=excluded.ac_score, gn_artist=excluded.gn_artist, gn_title=excluded.gn_title, "
         "agreement=excluded.agreement, error=NULL, status='pending', mtime=excluded.mtime",
         (str(filepath), artist, title, album, confidence, filesize, duration, filehash,
-        sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement, mtime)
+         sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement, mtime)
     )
     conn.commit()
-    print(f"[queued] {filepath.name} -> {artist} / {title} - {album or '?'} ({confidence}%)")
+    logger.info(f"Queued: {filepath.name} -> {artist} / {title} - {album or '?'} ({confidence}%)")
 
 def scan_loop(poll_seconds=15):
-    """Main scanning loop."""
     conn = get_db()
-
-    # Initialize scan_status if not exists
     conn.execute(
         "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
         "VALUES (1, 0, 0, NULL, CURRENT_TIMESTAMP, 0) "
         "ON CONFLICT(id) DO NOTHING"
     )
     conn.commit()
-
     last_file_count = 0
 
     try:
         while True:
-            # Check if paused
             if is_paused(conn):
+                logger.info("Scanner paused - sleeping for 5 seconds")
                 time.sleep(5)
                 continue
 
             try:
-                # Discover all files
                 all_files = discover_files()
-
-                # Get paths of already queued files (batch query)
                 queued_paths = batch_already_queued(conn, all_files)
-
-                # Get mtimes for already queued files
                 queued_mtimes = batch_get_mtimes(conn, [Path(p) for p in queued_paths])
 
-                # Check which files need processing (not queued OR modified since last scan)
                 pending_files = []
                 for f in all_files:
                     f_str = str(f)
                     f_mtime = f.stat().st_mtime
-
                     if f_str not in queued_paths:
                         pending_files.append(f)
                     elif f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime:
-                        # File was modified since last scan, re-process it
                         pending_files.append(f)
 
                 total = len(all_files)
-
-                # Only update if file count changed or we have pending files
                 if len(all_files) != last_file_count or pending_files:
                     update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
                     last_file_count = len(all_files)
 
-                # Process pending files
                 for i, f in enumerate(pending_files):
-                    if is_paused(conn):
-                        print("[scan_loop] Pause requested mid-batch - stopping here, "
-                              "will resume from this point when unpaused", file=sys.stderr)
-                        break
                     update_scan_status(
                         conn, total=total,
                         processed=len(all_files) - len(pending_files) + i,
@@ -495,7 +473,7 @@ def scan_loop(poll_seconds=15):
                     try:
                         process_file(conn, f)
                     except Exception as e:
-                        print(f"[scan_loop] failed to process file {f}: {e}", file=sys.stderr)
+                        logger.error(f"Failed to process file {f}: {e}")
                         try:
                             conn.execute(
                                 "INSERT INTO queue (filepath, confidence, error, status, mtime) VALUES (?, 0.0, ?, 'pending', ?) "
@@ -504,15 +482,12 @@ def scan_loop(poll_seconds=15):
                             )
                             conn.commit()
                         except Exception as db_err:
-                            print(f"[scan_loop] failed logging error: {db_err}", file=sys.stderr)
-                else:
-                    # Only reached if the for loop completed without break -
-                    # i.e. it wasn't interrupted by a mid-batch pause request.
-                    update_scan_status(conn, total=total, processed=total, current_file=None)
+                            logger.error(f"Failed logging error: {db_err}")
+
+                update_scan_status(conn, total=total, processed=total, current_file=None)
 
             except Exception as e:
-                print(f"[scan_loop] global loop failure: {e}", file=sys.stderr)
-                # Re-establish connection if it was lost
+                logger.error(f"Global loop failure: {e}")
                 try:
                     conn.close()
                 except:
@@ -522,7 +497,7 @@ def scan_loop(poll_seconds=15):
             time.sleep(poll_seconds)
 
     except KeyboardInterrupt:
-        print("[scan_loop] Received interrupt, shutting down...", file=sys.stderr)
+        logger.info("Received interrupt, shutting down...")
     finally:
         conn.close()
 
