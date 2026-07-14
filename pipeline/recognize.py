@@ -464,10 +464,15 @@ def scan_loop(poll_seconds=15):
                 total = len(all_files)
                 update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
 
+                batch_start_processed = len(all_files) - len(pending_files)
                 for i, f in enumerate(pending_files):
+                    if is_paused(conn):
+                        logger.info("Pause requested mid-batch - stopping here, "
+                                    "will resume from this point when unpaused")
+                        break
                     update_scan_status(
                         conn, total=total,
-                        processed=len(all_files) - len(pending_files) + i,
+                        processed=batch_start_processed + i,
                         current_file=str(f)
                     )
                     try:
