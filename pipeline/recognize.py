@@ -34,7 +34,7 @@ socket.setdefaulttimeout(15)  # Prevents any network lookup from hanging the sca
 
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
-DB_PATH = APP_ROOT / "db" / "queue.sqlite3"
+DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
 ACOUSTID_API_KEY = os.environ.get("ACOUSTID_API_KEY")
 GENIUS_ACCESS_TOKEN = os.environ.get("GENIUS_ACCESS_TOKEN")
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
@@ -203,7 +203,7 @@ def get_whisper_model():
         from faster_whisper import WhisperModel
         print(f"[whisper] Loading model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})...", file=sys.stderr)
         _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
-        print(f"[whisper] Model loaded successfully", file=sys.stderr)
+        print("[whisper] Model loaded successfully", file=sys.stderr)
     return _whisper_model
 
 def get_sample_windows(duration, window=20, count=3):
@@ -483,6 +483,10 @@ def scan_loop(poll_seconds=15):
 
                 # Process pending files
                 for i, f in enumerate(pending_files):
+                    if is_paused(conn):
+                        print("[scan_loop] Pause requested mid-batch - stopping here, "
+                              "will resume from this point when unpaused", file=sys.stderr)
+                        break
                     update_scan_status(
                         conn, total=total,
                         processed=len(all_files) - len(pending_files) + i,
@@ -501,9 +505,10 @@ def scan_loop(poll_seconds=15):
                             conn.commit()
                         except Exception as db_err:
                             print(f"[scan_loop] failed logging error: {db_err}", file=sys.stderr)
-
-                # Mark completion
-                update_scan_status(conn, total=total, processed=total, current_file=None)
+                else:
+                    # Only reached if the for loop completed without break -
+                    # i.e. it wasn't interrupted by a mid-batch pause request.
+                    update_scan_status(conn, total=total, processed=total, current_file=None)
 
             except Exception as e:
                 print(f"[scan_loop] global loop failure: {e}", file=sys.stderr)

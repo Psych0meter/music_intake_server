@@ -67,14 +67,22 @@ double entries.
 
 ## Review UI
 
-- Inline audio preview, per-source identification comparison
-  (SongRec vs. AcoustID side by side), confidence scoring
-- Live scan progress bar
-- Sortable/filterable columns, column visibility toggle, hide/show
-  unrecognized tracks
-- Approve → staged for `beets import` (tags, artwork, ReplayGain, moves
-  into final library). Reject → moved aside. Nothing else touches your
-  library.
+- Inline audio preview, per-source identification comparison (SongRec /
+  AcoustID / Genius side by side when the lyrics fallback fires),
+  confidence scoring
+- Live scan progress bar with **Pause/Resume** — pausing takes effect
+  within one file's processing time, not at the end of the current batch
+- Server-side pagination, search (by filename/artist/title/album), and
+  filters for unrecognized tracks and exact-duplicates-only
+- Sortable columns, column visibility toggle
+- Multi-select for bulk approve/reject/rescan, plus per-row Rescan
+  (re-runs identification from scratch without touching the file itself)
+- Approve → staged for `beets import` (tags + renames using the metadata
+  already approved, no re-matching against MusicBrainz). Reject → moved
+  aside. Nothing else touches your library.
+- Files are automatically re-processed if modified on disk after being
+  queued (tracked via modification time), so fixing a file externally
+  doesn't require a manual rescan
 
 ## Repository layout
 
@@ -84,8 +92,27 @@ install/music-intake-install.sh # Runs inside the LXC: installs everything
 app/                             # Flask review UI
 pipeline/                        # Recognition daemon + beets import script
 config/                          # beets config + example scan_roots/secrets
+migrations/                      # Versioned SQL schema migrations
+migrate.py                       # Standalone migration runner (see below)
+scripts/                         # Local dev/test tooling (Codespaces etc.)
 docs/                            # Architecture and configuration reference
 ```
+
+## Database migrations
+
+Schema changes are plain, ordered `.sql` files in `migrations/`, applied
+by `migrate.py` — a standalone script, not code embedded in `server.py`/
+`recognize.py`. It runs automatically before either service starts (via
+the `music-migrate.service` systemd unit the installer sets up), or you
+can run it manually:
+
+```bash
+python3 migrate.py --status   # show applied/pending, change nothing
+python3 migrate.py            # apply any pending migrations
+```
+
+Adding a new migration for a future feature is just adding the next
+numbered `.sql` file — no application code changes needed.
 
 ## Requirements
 
@@ -98,6 +125,23 @@ docs/                            # Architecture and configuration reference
 Default container sizing: 4 vCPU / 4GB RAM / 12GB disk — sized for the
 Whisper fallback path; drop to 2 vCPU / 2GB RAM if you don't plan to use
 it (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)).
+
+## Testing locally before deploying
+
+No Proxmox host needed. In a GitHub Codespace or any Debian/Ubuntu dev box:
+
+```bash
+./scripts/dev-setup.sh --with-songrec --with-whisper   # one-time, ~10min
+# edit /opt/music-intake/config/secrets.env with your API keys
+
+./scripts/dev-test-track.sh /path/to/a/test-track.mp3
+```
+
+This runs SongRec, AcoustID, and the lyrics fallback individually against
+one file, then the full identification pipeline end-to-end, printing
+exactly what each source found and what got decided. `MUSIC_DB_PATH` can
+be set to point `server.py`/`recognize.py`/`migrate.py` at an alternate
+database file for isolated test runs.
 
 ## License
 

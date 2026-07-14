@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import hashlib
 import math
 import os
 import re
@@ -7,7 +6,6 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-import mutagen
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
 APP_ROOT = Path("/opt/music-intake")

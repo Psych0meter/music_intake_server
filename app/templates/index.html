@@ -499,6 +499,7 @@
         console.error("Failed parsing scan telemetry updates:", err);
       }
     }
+    pollScanStatus();
     setInterval(pollScanStatus, 2000);
 
     async function togglePause() {

@@ -18,14 +18,15 @@ music-migrate.service systemd unit (see docs/CONFIGURATION.md) which
 both music-recognize.service and music-review-ui.service depend on.
 """
 import argparse
+import os
 import sqlite3
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+APP_ROOT = Path("/opt/music-intake")
 
-DB_PATH = BASE_DIR / "db" / "queue.sqlite3"
-MIGRATIONS_DIR = BASE_DIR / "migrations"
+DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
+MIGRATIONS_DIR = APP_ROOT / "migrations"
 
 def get_connection():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
