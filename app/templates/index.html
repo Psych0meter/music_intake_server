@@ -18,7 +18,7 @@
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
 
-    /* Fixed header - must have overflow-visible on parent */
+    /* Fixed header - parent must have overflow-visible */
     thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
     /* Duplicate modal */
@@ -102,7 +102,7 @@
     </div>
 
     {% if rows %}
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden hidden md:block" id="main-table-container">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible hidden md:block" id="main-table-container">
       <div class="overflow-x-auto">
         <table class="w-full table-auto text-left border-collapse" id="review-table">
           <thead class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
@@ -216,6 +216,22 @@
       </div>
     </div>
 
+    <!-- Pagination Controls -->
+    {% if total_pages > 1 %}
+    <div class="flex items-center justify-between mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+      <div class="text-sm text-gray-600">
+        Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span>
+        ({% if total_count %}{{ total_count }}{% else %}0{% endif %} total)
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">« First</button>
+        <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
+        <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+        <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Last »</button>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
       <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
@@ -288,6 +304,19 @@
         </div>
       </div>
       {% endfor %}
+
+      <!-- Mobile Pagination -->
+      {% if total_pages > 1 %}
+      <div class="flex items-center justify-between mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+        <div class="text-sm text-gray-600">
+          Page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
+          <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+        </div>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -376,13 +405,6 @@
         return cb && !cb.checked;
       });
       localStorage.setItem('hiddenColumns', JSON.stringify(hiddenCols));
-      
-      // Also hide in mobile view if needed
-      if (!show) {
-        document.querySelectorAll(`.mobile-${col}`).forEach(el => {
-          el.style.display = 'none';
-        });
-      }
     }
 
     // Restore filter states from URL
@@ -656,12 +678,10 @@
       const modal = document.getElementById('duplicate-modal');
       const content = document.getElementById('duplicate-content');
 
-      // Show loading state
       content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Loading duplicates...</p></div>';
       modal.classList.add('show');
 
       try {
-        // Fetch duplicates from API
         const res = await fetch(`/api/duplicates/${mainId}`);
         if (!res.ok) throw new Error('Failed to load duplicates');
 
@@ -708,7 +728,7 @@
           html += `<h3 class="text-lg font-semibold text-gray-900 pt-4 border-t border-gray-200">Duplicates (${duplicates.length})</h3>`;
           html += `<p class="text-sm text-gray-500 -mt-2">Select which to keep or delete</p>`;
           
-          duplicates.forEach((dup, idx) => {
+          duplicates.forEach((dup) => {
             html += `
               <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
                 <div class="flex items-start gap-3">
@@ -834,12 +854,10 @@
       const modal = document.getElementById('fuzzy-modal');
       const content = document.getElementById('fuzzy-content');
 
-      // Show loading state
       content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Searching for similar tracks...</p></div>';
       modal.classList.add('show');
 
       try {
-        // Fetch fuzzy duplicates from API
         const res = await fetch(`/api/fuzzy-duplicates/${mainId}`);
         if (!res.ok) {
           const data = await res.json();
@@ -938,7 +956,7 @@
     // Helper functions for human-readable formatting
     function human_size(num_bytes) {
       if (num_bytes === undefined || num_bytes === null) return "?";
-      let size = float(num_bytes);
+      let size = parseFloat(num_bytes);
       for (const unit of ["B", "KB", "MB", "GB"]) {
         if (size < 1024 || unit === "GB") {
           return unit === "B" ? `${Math.round(size)} ${unit}` : `${size.toFixed(1)} ${unit}`;
@@ -972,3 +990,5 @@
       }
     });
   </script>
+</body>
+</html>
