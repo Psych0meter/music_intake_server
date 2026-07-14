@@ -436,7 +436,6 @@ def scan_loop(poll_seconds=15):
         "ON CONFLICT(id) DO NOTHING"
     )
     conn.commit()
-    last_file_count = 0
 
     try:
         while True:
@@ -447,22 +446,23 @@ def scan_loop(poll_seconds=15):
 
             try:
                 all_files = discover_files()
-                queued_paths = batch_already_queued(conn, all_files)
-                queued_mtimes = batch_get_mtimes(conn, [Path(p) for p in queued_paths])
 
-                pending_files = []
-                for f in all_files:
-                    f_str = str(f)
-                    f_mtime = f.stat().st_mtime
-                    if f_str not in queued_paths:
-                        pending_files.append(f)
-                    elif f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime:
-                        pending_files.append(f)
+                # Get all filepaths already in queue
+                queued_set = set()
+                if all_files:
+                    path_strs = [str(f) for f in all_files]
+                    placeholders = ",".join("?" * len(path_strs))
+                    rows = conn.execute(
+                        f"SELECT filepath FROM queue WHERE filepath IN ({placeholders})",
+                        path_strs
+                    ).fetchall()
+                    queued_set = {row["filepath"] for row in rows}
+
+                # Only process files NOT already in queue
+                pending_files = [f for f in all_files if str(f) not in queued_set]
 
                 total = len(all_files)
-                if len(all_files) != last_file_count or pending_files:
-                    update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
-                    last_file_count = len(all_files)
+                update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
 
                 for i, f in enumerate(pending_files):
                     update_scan_status(
