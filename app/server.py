@@ -1,23 +1,43 @@
 #!/usr/bin/env python3
+import logging
 import math
 import os
 import re
 import shutil
 import sqlite3
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
+# --- Setup ---
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
 DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
-
 NAS_INTAKE = Path("/mnt/nas-intake")
 APPROVED = NAS_INTAKE / "approved"
 REJECTED = NAS_INTAKE / "rejected"
 
 app = Flask(__name__)
 
+# --- Logging ---
+def setup_logging(name):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    log_dir = Path("/opt/music-intake/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        log_dir / f"{name}.log",
+        maxBytes=10*1024*1024,
+        backupCount=5
+    )
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+    return logger
+
+logger = setup_logging('web')
+
+# --- Helpers ---
 def load_scan_roots():
     if not SCAN_ROOTS_FILE.is_file():
         return []
@@ -74,29 +94,25 @@ def relative_source(filepath_str):
             continue
     return filepath_str
 
+# --- Approve/Reject/Rescan Helpers ---
 def _approve_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
         return False, "not found"
     if row["error"]:
         return False, "Cannot approve unreadable files"
-
     artist = sanitize_filename(row["artist"]) or "Unknown Artist"
     album = sanitize_filename(row["album"]) or "Unknown Album"
     title = sanitize_filename(row["title"]) or "Unknown Title"
-
     src = Path(row["filepath"])
     extension = src.suffix
-
     dest_dir = APPROVED / artist / album
     dest_file = dest_dir / f"{title}{extension}"
-
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dest_file))
     except Exception as e:
         return False, f"File system move failed: {str(e)}"
-
     conn.execute("UPDATE queue SET status = 'approved' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -105,14 +121,12 @@ def _reject_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
         return False, "not found"
-
     src = Path(row["filepath"])
     dest = REJECTED / src.name
     try:
         shutil.move(str(src), str(dest))
     except Exception as e:
         return False, f"Failed to move file to rejected: {str(e)}"
-
     conn.execute("UPDATE queue SET status = 'rejected' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -135,6 +149,8 @@ def _run_batch(conn, ids, fn):
         results[item_id] = {"ok": ok, "error": err}
     return results
 
+# --- Routes ---
+
 @app.route("/")
 def index():
     page = request.args.get("page", 1, type=int)
@@ -156,9 +172,8 @@ def index():
     if not show_unrecognized:
         query_conditions.append("confidence > 0")
 
-    # Server-side duplicates filtering
     if show_duplicates:
-        query_conditions.append("filehash IN (SELECT filehash FROM queue WHERE status = 'pending' AND filehash IS NOT NULL GROUP BY filehash HAVING COUNT(*) > 1)")
+        query_conditions.append("filehash IN (SELECT filehash FROM queue WHERE status = 'pending' AND filehash IS NOT NULL AND filehash != '' GROUP BY filehash HAVING COUNT(*) > 1)")
 
     if search_query:
         query_conditions.append(
@@ -201,6 +216,16 @@ def index():
     """
     raw_rows = conn.execute(final_query, query_params + [per_page, offset]).fetchall()
 
+    # Get set of global duplicate filehashes in pending queue to tag row-duplicate classes correctly
+    dup_hashes = set()
+    dup_rows = conn.execute(
+        "SELECT filehash FROM queue WHERE status = 'pending' AND filehash IS NOT NULL AND filehash != '' GROUP BY filehash HAVING COUNT(*) > 1"
+    ).fetchall()
+    for dr in dup_rows:
+        if dr["filehash"]:
+            dup_hashes.add(dr["filehash"])
+
+    # Convert all rows to plain dicts and add human-readable fields
     enriched = []
     for r in raw_rows:
         d = dict(r)
@@ -210,19 +235,35 @@ def index():
         d["error"] = r["error"]
         d["relative_path"] = relative_source(r["filepath"])
         d["agreement_human"] = f"{r['agreement'] * 100:.0f}%" if r["agreement"] is not None else "-"
+        d["is_duplicate"] = (r["filehash"] in dup_hashes) if r["filehash"] else False
         enriched.append(d)
 
+    # Group by filehash - convert duplicates to simplified dicts for JSON serialization
     grouped_rows = []
     hash_groups = {}
     for r in enriched:
-        h = r["filehash"]
+        h = r.get("filehash")
         r["duplicates"] = []
         if h:
             if h not in hash_groups:
                 hash_groups[h] = r
                 grouped_rows.append(r)
             else:
-                hash_groups[h]["duplicates"].append(r)
+                # Create simplified duplicate entry with only essential fields
+                dup_dict = {
+                    "id": r["id"],
+                    "filepath": r["filepath"],
+                    "filehash": r["filehash"],
+                    "size_human": r.get("size_human", ""),
+                    "duration_human": r.get("duration_human", ""),
+                    "filesize": r.get("filesize"),
+                    "duration": r.get("duration"),
+                    "artist": r.get("artist", ""),
+                    "title": r.get("title", ""),
+                    "album": r.get("album", ""),
+                    "confidence": r.get("confidence", 0)
+                }
+                hash_groups[h]["duplicates"].append(dup_dict)
         else:
             grouped_rows.append(r)
 
@@ -240,8 +281,97 @@ def index():
         show_duplicates=show_duplicates,
         sort_by=sort_by,
         order=order,
-        scan_roots=[str(p) for p in load_scan_roots()],
     )
+
+@app.route("/history")
+def history():
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    status_filter = request.args.get("status", "all")
+    search_query = request.args.get("q", "").strip()
+
+    conn = get_db()
+    query_conditions = []
+    query_params = []
+
+    if status_filter != "all":
+        query_conditions.append("status = ?")
+        query_params.append(status_filter)
+
+    if search_query:
+        query_conditions.append(
+            "(filepath LIKE ? OR artist LIKE ? OR title LIKE ? OR album LIKE ?)"
+        )
+        like_param = f"%{search_query}%"
+        query_params.extend([like_param, like_param, like_param, like_param])
+
+    where_clause = " WHERE " + " AND ".join(query_conditions) if query_conditions else ""
+
+    total_count = conn.execute(
+        f"SELECT COUNT(*) FROM queue {where_clause}", query_params
+    ).fetchone()[0]
+
+    total_pages = max(1, math.ceil(total_count / per_page))
+    if page > total_pages:
+        page = total_pages
+    offset = (page - 1) * per_page
+
+    final_query = f"""
+        SELECT * FROM queue
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+    """
+    raw_rows = conn.execute(final_query, query_params + [per_page, offset]).fetchall()
+
+    enriched = []
+    for r in raw_rows:
+        d = dict(r)
+        d["size_human"] = human_size(r["filesize"])
+        d["duration_human"] = human_duration(r["duration"])
+        d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
+        d["error"] = r["error"]
+        d["relative_path"] = relative_source(r["filepath"])
+        d["status_class"] = {
+            'approved': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+            'rejected': 'bg-rose-50 text-rose-700 border-rose-200',
+            'pending': 'bg-amber-50 text-amber-700 border-amber-200'
+        }.get(r["status"], 'bg-gray-50 text-gray-700 border-gray-200')
+        enriched.append(d)
+
+    conn.close()
+
+    return render_template(
+        "history.html",
+        rows=enriched,
+        total_count=total_count,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        search_query=search_query,
+        status_filter=status_filter,
+    )
+
+@app.route("/logs")
+def view_logs():
+    log_files = {
+        'recognize': '/opt/music-intake/logs/recognize.log',
+        'web': '/opt/music-intake/logs/web.log',
+        'beets': '/opt/music-intake/logs/beets-import.log'
+    }
+
+    logs = {}
+    for name, path in log_files.items():
+        try:
+            with open(path, 'r') as f:
+                logs[name] = {
+                    'content': f.read().splitlines()[-500:],
+                    'path': path
+                }
+        except FileNotFoundError:
+            logs[name] = {'content': [], 'path': path, 'error': 'File not found'}
+
+    return render_template("logs.html", logs=logs)
 
 @app.route("/api/scan-status")
 def scan_status():
@@ -251,19 +381,20 @@ def scan_status():
     if not row or not row["total"]:
         return jsonify({
             "total": 0, "processed": 0, "percent": 100,
-            "current_file": None, "scanning": False, "is_paused": False
+            "current_file": None, "scanning": False, "is_paused": False,
+            "start_time": None
         })
     total = row["total"]
     processed = row["processed"] or 0
     is_paused = bool(row["is_paused"]) if "is_paused" in row.keys() else False
-
     return jsonify({
         "total": total,
         "processed": processed,
         "percent": int((processed / total) * 100) if total else 100,
         "current_file": row["current_file"],
         "scanning": processed < total,
-        "is_paused": is_paused
+        "is_paused": is_paused,
+        "start_time": row["updated_at"] if row else None
     })
 
 @app.route("/api/scan/pause", methods=["POST"])
@@ -317,6 +448,51 @@ def rescan(item_id):
     conn.close()
     return jsonify({"status": "rescan_queued"}) if ok else (jsonify({"error": err}), 404)
 
+@app.route("/api/delete/<int:item_id>", methods=["POST"])
+def delete_item(item_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    try:
+        src = Path(row["filepath"])
+        if src.exists():
+            src.unlink()
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "deleted"})
+
+@app.route("/api/duplicates/<int:item_id>")
+def get_duplicates(item_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    filehash = row["filehash"]
+    rows = conn.execute(
+        "SELECT * FROM queue WHERE filehash = ? ORDER BY id",
+        (filehash,)
+    ).fetchall()
+
+    enriched = []
+    for r in rows:
+        d = dict(r)
+        d["size_human"] = human_size(r["filesize"])
+        d["duration_human"] = human_duration(r["duration"])
+        d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
+        d["relative_path"] = relative_source(r["filepath"])
+        enriched.append(d)
+
+    conn.close()
+    return jsonify({"main": enriched[0], "duplicates": enriched[1:]})
+
 @app.route("/api/approve-batch", methods=["POST"])
 def approve_batch():
     payload = request.get_json() or {}
@@ -352,25 +528,6 @@ def rescan_batch():
     results = _run_batch(conn, ids, _rescan_one)
     conn.close()
     return jsonify({"results": results})
-
-@app.route("/api/delete/<int:item_id>", methods=["POST"])
-def delete_item(item_id):
-    conn = get_db()
-    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "not found"}), 404
-    try:
-        src = Path(row["filepath"])
-        if src.exists():
-            src.unlink()
-    except Exception as e:
-        conn.close()
-        return jsonify({"error": str(e)}), 500
-    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "deleted"})
 
 @app.route("/api/purge", methods=["POST"])
 def purge_queue():
