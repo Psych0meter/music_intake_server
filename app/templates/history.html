@@ -53,7 +53,7 @@
       </div>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible">
       <div class="overflow-x-auto">
         <table class="w-full table-auto text-left border-collapse">
           <thead class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
@@ -114,15 +114,21 @@
     </div>
     {% endif %}
 
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
     <div class="flex items-center justify-between mt-6 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
       <div class="text-sm text-gray-600">
         Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span> pages
+        ({% if total_count %}{{ total_count }}{% else %}0{% endif %} total)
       </div>
       <div class="flex items-center gap-2">
-        <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Previous</button>
-        <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next</button>
+        <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">« First</button>
+        <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
+        <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+        <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Last »</button>
       </div>
     </div>
+    {% endif %}
   </div>
 
   <script>
@@ -191,13 +197,11 @@
       if (!confirm(`Delete "${filename}"?\n\nThis will permanently remove the file from disk!`)) return;
       const res = await fetch(`/api/delete/${id}`, { method: 'POST' });
       if (res.ok) {
-        // Remove from DOM
         const row = document.getElementById(`hrow-${id}`);
         if (row) row.remove();
         selectedIds.delete(id);
         syncCheckboxStates();
         
-        // If no rows left, reload
         if (document.querySelectorAll('.item-row').length === 0) {
           window.location.reload();
         }
@@ -228,9 +232,7 @@
     }
 
     function exportHistory() {
-      const rows = document.querySelectorAll('#bulk-toolbar').length > 0 
-        ? document.querySelectorAll('tbody tr') 
-        : [];
+      const rows = document.querySelectorAll('tbody tr');
       
       if (rows.length === 0) {
         alert('No tracks to export');
@@ -250,7 +252,15 @@
         const size = cells[7]?.textContent?.trim() || '';
         const date = cells[8]?.textContent?.trim() || '';
         
-        csv += `"${status}","${track}","${artist}","${album}","${confidence}","${file}","${size}","${date}"\n`;
+        // Escape commas and quotes for CSV
+        const escapeCSV = (str) => {
+          if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+        
+        csv += `${escapeCSV(status)},${escapeCSV(track)},${escapeCSV(artist)},${escapeCSV(album)},${escapeCSV(confidence)},${escapeCSV(file)},${escapeCSV(size)},${escapeCSV(date)}\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv' });
