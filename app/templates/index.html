@@ -18,16 +18,18 @@
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
 
-    /* Fixed header */
-    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; }
+    /* Fixed header - must have overflow-visible on parent */
+    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
     /* Duplicate modal */
     #duplicate-modal { display: none; }
     #duplicate-modal.show { display: flex; }
+    #fuzzy-modal { display: none; }
+    #fuzzy-modal.show { display: flex; }
 
     /* Mobile column fix */
     @media (max-width: 767px) {
-      .col-title, .col-artist, .col-album { display: block !important; }
+      .mobile-hide { display: none !important; }
     }
   </style>
 </head>
@@ -56,7 +58,7 @@
           <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none">
             Columns ▾
           </button>
-          <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+          <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-20">
             <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
           </div>
         </div>
@@ -90,6 +92,7 @@
         <button onclick="bulkAct('approve')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-400">Approve Selected</button>
         <button onclick="bulkAct('reject')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-gray-800 hover:bg-gray-100">Reject Selected</button>
         <button onclick="bulkAct('rescan')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400">Rescan Selected</button>
+        <button onclick="bulkAct('delete')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-500 hover:bg-rose-400">Delete Selected</button>
         <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-700 hover:bg-indigo-800">Clear</button>
       </div>
     </div>
@@ -134,13 +137,19 @@
                   <span class="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">⚠ Read Error</span>
                 {% endif %}
                 {% if row.is_duplicate %}
-                  <div class="mt-3 border-l-2 border-rose-300 pl-2">
-                    <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium mt-1 flex items-center gap-1">
+                  <div class="mt-3 border-l-2 border-rose-300 pl-2 space-y-1">
+                    <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                       </svg>
                       View duplicates
+                    </button>
+                    <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-amber-600 hover:text-amber-800 font-medium flex items-center gap-1">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                      </svg>
+                      Check similar
                     </button>
                   </div>
                 {% endif %}
@@ -197,6 +206,7 @@
                   <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30 disabled:hover:bg-emerald-600">Approve</button>
                   <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
                   <button onclick="act({{ row.id }}, 'rescan')" class="px-3 py-1 border border-amber-300 text-xs font-semibold rounded text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm">Rescan</button>
+                  <button onclick="act({{ row.id }}, 'delete')" class="px-3 py-1 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
                 </div>
               </td>
             </tr>
@@ -221,13 +231,19 @@
         </div>
 
         {% if row.is_duplicate %}
-          <div class="mb-3 border border-rose-200 bg-rose-50 rounded p-2">
-             <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-               </svg>
-               View duplicates
-             </button>
+          <div class="mb-3 border border-rose-200 bg-rose-50 rounded p-2 space-y-1">
+            <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+              </svg>
+              View duplicates
+            </button>
+            <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-amber-600 hover:text-amber-800 font-medium flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+              </svg>
+              Check similar
+            </button>
           </div>
         {% endif %}
 
@@ -240,38 +256,48 @@
         {% endif %}
 
         <div class="space-y-2 mb-3">
-          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40 col-title">
-          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40 col-artist">
-          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40 col-album">
+          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
         </div>
 
-        <div class="flex gap-2">
-          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30">Approve</button>
-          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">Reject</button>
-          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-2 text-sm font-semibold rounded-lg text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100">Rescan</button>
+        <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+          <div class="text-center">
+            <p class="text-gray-400 mb-1">SongRec</p>
+            <p class="font-medium">{{ row.sr_artist or '-' }}</p>
+            <p class="text-gray-500 truncate">{{ row.sr_title or '-' }}</p>
+          </div>
+          <div class="text-center">
+            <p class="text-gray-400 mb-1">AcoustID</p>
+            <p class="font-medium">{{ row.ac_artist or '-' }}</p>
+            <p class="text-gray-500 truncate">{{ row.ac_title or '-' }}</p>
+            <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">{{ row.ac_score_human }}</span>
+          </div>
+          <div class="text-center">
+            <p class="text-gray-400 mb-1">Genius</p>
+            <p class="font-medium">{{ row.gn_artist or '-' }}</p>
+            <p class="text-gray-500 truncate">{{ row.gn_title or '-' }}</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-1.5 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30">Approve</button>
+          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-1.5 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
+          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-1.5 border border-amber-300 text-xs font-semibold rounded text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm">Rescan</button>
+          <button onclick="act({{ row.id }}, 'delete', true)" class="flex-1 px-3 py-1.5 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
         </div>
       </div>
       {% endfor %}
-    </div>
-
-    <div class="flex items-center justify-between mt-6 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-      <div class="text-sm text-gray-600">
-        Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span> pages
-      </div>
-      <div class="flex items-center gap-2">
-        <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
-        <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-      </div>
     </div>
     {% endif %}
   </div>
 
   <!-- Duplicate Details Modal -->
   <div id="duplicate-modal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto p-6">
+    <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-gray-900">Duplicate Track Details</h2>
-        <button onclick="closeDuplicateModal()" class="text-gray-400 hover:text-gray-600">
+        <button onclick="closeDuplicateModal()" class="text-gray-400 hover:text-gray-600 p-1 -mr-2">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -281,10 +307,83 @@
     </div>
   </div>
 
+  <!-- Fuzzy Similar Tracks Modal -->
+  <div id="fuzzy-modal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold text-gray-900">Similar Tracks (Fuzzy Match)</h2>
+        <button onclick="closeFuzzyModal()" class="text-gray-400 hover:text-gray-600 p-1 -mr-2">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="fuzzy-content"></div>
+    </div>
+  </div>
+
   <script>
     const selectedIds = new Set();
     let isPaused = false;
     let scanStartTime = null;
+    let currentModalId = null;
+
+    // Column visibility management
+    const columnClasses = [
+      'col-select', 'col-source', 'col-preview', 'col-songrec', 'col-acoustid',
+      'col-genius', 'col-title', 'col-artist', 'col-album', 'col-size',
+      'col-length', 'col-confidence', 'col-actions'
+    ];
+
+    function initColumnToggle() {
+      const colMenu = document.getElementById('col-checkboxes');
+      const savedHidden = JSON.parse(localStorage.getItem('hiddenColumns') || '[]');
+      
+      columnClasses.forEach(col => {
+        const label = col.replace('col-', '').charAt(0).toUpperCase() + 
+          col.replace('col-', '').slice(1);
+        const checked = !savedHidden.includes(col);
+        
+        const cb = document.createElement('label');
+        cb.className = 'flex items-center gap-2 text-sm cursor-pointer';
+        cb.innerHTML = `
+          <input type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500 column-toggle" 
+            value="${col}" ${checked ? 'checked' : ''}>
+          <span>${label}</span>
+        `;
+        colMenu.appendChild(cb);
+        
+        // Apply saved state
+        document.querySelectorAll(`.${col}`).forEach(el => {
+          el.style.display = checked ? '' : 'none';
+        });
+        
+        // Add event listener
+        cb.querySelector('input').addEventListener('change', function() {
+          toggleColumn(col, this.checked);
+        });
+      });
+    }
+
+    function toggleColumn(col, show) {
+      document.querySelectorAll(`.${col}`).forEach(el => {
+        el.style.display = show ? '' : 'none';
+      });
+      
+      // Save to localStorage
+      const hiddenCols = columnClasses.filter(c => {
+        const cb = document.querySelector(`#col-checkboxes input[value="${c}"]`);
+        return cb && !cb.checked;
+      });
+      localStorage.setItem('hiddenColumns', JSON.stringify(hiddenCols));
+      
+      // Also hide in mobile view if needed
+      if (!show) {
+        document.querySelectorAll(`.mobile-${col}`).forEach(el => {
+          el.style.display = 'none';
+        });
+      }
+    }
 
     // Restore filter states from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -358,6 +457,9 @@
       navigate({ duplicates: e.target.checked ? '1' : '0', page: 1 });
     });
 
+    // Initialize column toggle on page load
+    document.addEventListener('DOMContentLoaded', initColumnToggle);
+
     function syncCheckboxStates() {
       document.querySelectorAll('.row-checkbox').forEach(cb => {
         cb.checked = selectedIds.has(parseInt(cb.dataset.id));
@@ -410,7 +512,17 @@
       selectedIds.delete(id);
     }
 
-    async function act(id, action, isMobile) {
+    async function act(id, action, isMobile = false) {
+      // For delete action, ask for confirmation
+      if (action === 'delete') {
+        const row = document.getElementById(`row-${id}`) || document.getElementById(`mrow-${id}`);
+        const filename = row ? row.querySelector('.font-medium')?.textContent || `track ${id}` : `track ${id}`;
+        if (!confirm(`Delete "${filename}"?\n\nThis will permanently remove the file from disk!`)) {
+          return;
+        }
+      }
+      
+      // For approve action, save metadata edits
       if (action === 'approve') {
         const prefix = isMobile ? '-m-' : '-';
         const artist = document.getElementById(`artist${prefix}${id}`).value.trim();
@@ -438,6 +550,14 @@
 
     async function bulkAct(action) {
       if (selectedIds.size === 0) return;
+      
+      // For delete action, ask for confirmation
+      if (action === 'delete') {
+        if (!confirm(`Delete ${selectedIds.size} selected track(s)?\n\nThis will permanently remove files from disk!`)) {
+          return;
+        }
+      }
+      
       const ids = Array.from(selectedIds);
       const payload = { ids: ids };
 
@@ -492,7 +612,8 @@
           const remaining = scanData.total - scanData.processed;
           const elapsed = scanData.processed;
           const now = Date.now() / 1000;
-          const startTime = scanData.start_time ? new Date(scanData.start_time).getTime() / 1000 : now - (elapsed > 0 ? elapsed / (scanData.percent / 100 || 1) : 0);
+          const startTime = scanData.start_time ? new Date(scanData.start_time).getTime() / 1000 
+            : now - (elapsed > 0 ? elapsed / (scanData.percent / 100 || 1) : 0);
           const elapsedSeconds = now - startTime;
           const rate = elapsedSeconds > 0 ? elapsed / elapsedSeconds : 0;
           const etaSeconds = remaining / (rate > 0 ? rate : 1);
@@ -506,7 +627,7 @@
           } else {
             isPaused = false;
             pauseBtn.textContent = 'Pause';
-            const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)} hours`;
+            const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)}h ${etaMinutes % 60}min`;
             label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
             bar.classList.replace('bg-amber-400', 'bg-indigo-500');
           }
@@ -529,10 +650,9 @@
       }
     }
 
+    // Duplicate Modal Functions
     async function showDuplicateModal(mainId) {
-      const row = document.getElementById(`row-${mainId}`) || document.getElementById(`mrow-${mainId}`);
-      if (!row) return;
-
+      currentModalId = mainId;
       const modal = document.getElementById('duplicate-modal');
       const content = document.getElementById('duplicate-content');
 
@@ -551,103 +671,304 @@
 
         let html = `
           <div class="space-y-4">
-            <h3 class="text-lg font-semibold text-gray-900">Main Track</h3>
             <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <p class="font-medium">${main.filepath.split('/').pop()}</p>
-              <p class="text-sm text-gray-500">${main.filepath}</p>
-              <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
-              <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
+              <div class="flex items-start gap-3">
+                <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${main.id}" checked disabled>
+                <div class="flex-1">
+                  <h3 class="text-lg font-semibold text-gray-900">Main Track</h3>
+                  <p class="text-sm font-medium text-gray-900 mt-1">${main.filepath.split('/').pop()}</p>
+                  <p class="text-[11px] text-gray-400 font-mono break-all">${main.relative_path}</p>
+                  <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
+                  <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
+                  
+                  <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
+                    <div>
+                      <p class="text-gray-400 mb-1">SongRec</p>
+                      <p class="font-medium truncate">${main.sr_artist || '-'}</p>
+                      <p class="text-gray-500 truncate">${main.sr_title || '-'}</p>
+                    </div>
+                    <div>
+                      <p class="text-gray-400 mb-1">AcoustID</p>
+                      <p class="font-medium truncate">${main.ac_artist || '-'}</p>
+                      <p class="text-gray-500 truncate">${main.ac_title || '-'}</p>
+                      <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">${main.ac_score_human}</span>
+                    </div>
+                    <div>
+                      <p class="text-gray-400 mb-1">Genius</p>
+                      <p class="font-medium truncate">${main.gn_artist || '-'}</p>
+                      <p class="text-gray-500 truncate">${main.gn_title || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
         `;
 
         if (duplicates.length > 0) {
-          html += `
-            <h3 class="text-lg font-semibold text-gray-900 mt-6">Duplicate Tracks (${duplicates.length})</h3>
-            <div class="space-y-3">
-          `;
-
-          duplicates.forEach(dup => {
+          html += `<h3 class="text-lg font-semibold text-gray-900 pt-4 border-t border-gray-200">Duplicates (${duplicates.length})</h3>`;
+          html += `<p class="text-sm text-gray-500 -mt-2">Select which to keep or delete</p>`;
+          
+          duplicates.forEach((dup, idx) => {
             html += `
-              <div class="bg-rose-50 rounded-lg p-4 border border-rose-200">
-                <div class="flex items-start justify-between gap-3 mb-2">
+              <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
+                <div class="flex items-start gap-3">
+                  <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${dup.id}">
                   <div class="flex-1">
-                    <p class="font-medium">${dup.filepath.split('/').pop()}</p>
-                    <p class="text-sm text-gray-600">${dup.filepath}</p>
-                    <p class="text-xs text-gray-500 mt-1">${dup.size_human} · ${dup.duration_human}</p>
-                    <p class="text-xs mt-1"><strong>Hash:</strong> ${dup.filehash?.substring(0, 16)}...</p>
+                    <p class="text-sm font-medium text-gray-900">${dup.filepath.split('/').pop()}</p>
+                    <p class="text-[11px] text-gray-400 font-mono break-all">${dup.relative_path || dup.filepath}</p>
+                    <p class="text-xs text-gray-500 mt-1">${dup.size_human || human_size(dup.filesize)} · ${dup.duration_human || human_duration(dup.duration)}</p>
+                    <audio controls class="mt-2 w-full"><source src="/api/audio/${dup.id}"></audio>
+                    
+                    <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
+                      <div>
+                        <p class="text-gray-400 mb-1">SongRec</p>
+                        <p class="font-medium truncate">${dup.sr_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.sr_title || '-'}</p>
+                      </div>
+                      <div>
+                        <p class="text-gray-400 mb-1">AcoustID</p>
+                        <p class="font-medium truncate">${dup.ac_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.ac_title || '-'}</p>
+                      </div>
+                      <div>
+                        <p class="text-gray-400 mb-1">Genius</p>
+                        <p class="font-medium truncate">${dup.gn_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.gn_title || '-'}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <audio controls class="w-full mt-2"><source src="/api/audio/${dup.id}"></audio>
-                <div class="flex gap-2 mt-3">
-                  <button onclick="act(${dup.id}, 'delete'); closeDuplicateModal()" class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-rose-600 hover:bg-rose-700">Delete</button>
-                  <button onclick="act(${dup.id}, 'approve'); closeDuplicateModal()" class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg text-white bg-emerald-600 hover:bg-emerald-700">Keep</button>
                 </div>
               </div>
             `;
           });
-
-          html += `</div></div>`;
         } else {
-          html += `</div>`;
+          html += `<p class="text-gray-500 text-center py-4">No duplicates found for this track.</p>`;
         }
+
+        html += `
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+            <button onclick="deleteSelectedDuplicates()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium shadow-sm transition-colors">
+              Delete Selected
+            </button>
+            <button onclick="keepOnlySelected()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-sm transition-colors">
+              Keep Only Selected
+            </button>
+            <button onclick="closeDuplicateModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium shadow-sm transition-colors">
+              Close
+            </button>
+          </div>
+        `;
 
         content.innerHTML = html;
       } catch (err) {
-        content.innerHTML = `<div class="text-rose-600 p-4">Error loading duplicates: ${err.message}</div>`;
-        console.error('Failed to load duplicates:', err);
+        content.innerHTML = `<p class="text-red-600 p-4">Error loading duplicates: ${err.message}</p>`;
+        console.error("Error loading duplicates:", err);
       }
     }
 
     function closeDuplicateModal() {
       document.getElementById('duplicate-modal').classList.remove('show');
-      window.location.reload();
+      currentModalId = null;
     }
 
-    // Column visibility configurations
-    const columns = [
-      { id: 'col-select', label: 'Select', default: true },
-      { id: 'col-source', label: 'Source File', default: true },
-      { id: 'col-preview', label: 'Preview', default: true },
-      { id: 'col-songrec', label: 'SongRec', default: false },
-      { id: 'col-acoustid', label: 'AcoustID', default: false },
-      { id: 'col-genius', label: 'Genius', default: false },
-      { id: 'col-title', label: 'Title', default: true },
-      { id: 'col-artist', label: 'Artist', default: true },
-      { id: 'col-album', label: 'Album', default: true },
-      { id: 'col-size', label: 'Size', default: true },
-      { id: 'col-length', label: 'Length', default: true },
-      { id: 'col-confidence', label: 'Confidence', default: true },
-      { id: 'col-actions', label: 'Actions', default: true }
-    ];
-
-    const savedCols = JSON.parse(localStorage.getItem('colMemory')) || {};
-    columns.forEach(col => { if (savedCols[col.id] !== undefined) col.default = savedCols[col.id]; });
-
-    const colCheckboxesContainer = document.getElementById('col-checkboxes');
-    function applyColumnVisibility() {
-      const stateToSave = {};
-      columns.forEach(col => {
-        stateToSave[col.id] = col.default;
-        document.querySelectorAll(`.${col.id}`).forEach(el => {
-          el.style.display = col.default ? '' : 'none';
-        });
-      });
-      localStorage.setItem('colMemory', JSON.stringify(stateToSave));
+    async function deleteSelectedDuplicates() {
+      const modal = document.getElementById('duplicate-modal');
+      const selected = Array.from(modal.querySelectorAll('.duplicate-checkbox:checked:not([disabled])'))
+        .map(cb => parseInt(cb.dataset.id));
+      
+      if (selected.length === 0) {
+        alert('Please select at least one duplicate to delete');
+        return;
+      }
+      
+      if (!confirm(`Delete ${selected.length} selected duplicate(s)?\n\nThis will permanently remove the files from disk!`)) return;
+      
+      try {
+        const results = await Promise.allSettled(
+          selected.map(id => fetch(`/api/delete/${id}`, { method: 'POST' }))
+        );
+        
+        const failed = results.filter(r => r.status === 'rejected');
+        if (failed.length > 0) {
+          alert(`Deleted ${results.length - failed.length} of ${selected.length} tracks. ${failed.length} failed.`);
+        }
+        
+        closeDuplicateModal();
+        window.location.reload();
+      } catch (err) {
+        alert('Error deleting duplicates: ' + err.message);
+      }
     }
 
-    if (colCheckboxesContainer) {
-      columns.forEach(col => {
-        const label = document.createElement('label');
-        label.className = "flex items-center gap-2 cursor-pointer";
-        label.innerHTML = `<input type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500" ${col.default ? 'checked' : ''}> <span class="text-sm">${col.label}</span>`;
-        label.querySelector('input').addEventListener('change', (e) => {
-          col.default = e.target.checked;
-          applyColumnVisibility();
-        });
-        colCheckboxesContainer.appendChild(label);
-      });
-      applyColumnVisibility();
+    async function keepOnlySelected() {
+      const modal = document.getElementById('duplicate-modal');
+      const allCheckboxes = Array.from(modal.querySelectorAll('.duplicate-checkbox'))
+        .map(cb => parseInt(cb.dataset.id));
+      const selected = Array.from(modal.querySelectorAll('.duplicate-checkbox:checked'))
+        .map(cb => parseInt(cb.dataset.id));
+      
+      if (selected.length !== 1) {
+        alert('Please select exactly one track to keep');
+        return;
+      }
+      
+      const toDelete = allCheckboxes.filter(id => !selected.includes(id));
+      
+      if (!confirm(`Keep only 1 track and delete ${toDelete.length} others?\n\nThis cannot be undone!`)) return;
+      
+      try {
+        await Promise.allSettled(
+          toDelete.map(id => fetch(`/api/delete/${id}`, { method: 'POST' }))
+        );
+        
+        closeDuplicateModal();
+        window.location.reload();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
     }
+
+    // Fuzzy Modal Functions
+    async function showFuzzyModal(mainId) {
+      currentModalId = mainId;
+      const modal = document.getElementById('fuzzy-modal');
+      const content = document.getElementById('fuzzy-content');
+
+      // Show loading state
+      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Searching for similar tracks...</p></div>';
+      modal.classList.add('show');
+
+      try {
+        // Fetch fuzzy duplicates from API
+        const res = await fetch(`/api/fuzzy-duplicates/${mainId}`);
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to load similar tracks');
+        }
+
+        const data = await res.json();
+        const main = data.main;
+        const fuzzyDuplicates = data.fuzzy_duplicates || [];
+
+        let html = `
+          <div class="space-y-4">
+            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <h3 class="text-lg font-semibold text-gray-900">Reference Track</h3>
+              <p class="text-sm font-medium text-gray-900 mt-1">${main.filepath.split('/').pop()}</p>
+              <p class="text-[11px] text-gray-400 font-mono break-all">${main.relative_path || main.filepath}</p>
+              <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
+              <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
+            </div>
+        `;
+
+        if (fuzzyDuplicates.length > 0) {
+          html += `<h3 class="text-lg font-semibold text-gray-900 pt-4 border-t border-gray-200">Similar Tracks (${fuzzyDuplicates.length})</h3>`;
+          html += `<p class="text-sm text-gray-500 -mt-2">Tracks with similar size and duration</p>`;
+          
+          fuzzyDuplicates.forEach((dup) => {
+            const sizeDiff = dup.size_diff !== undefined ? dup.size_diff : 0;
+            const durDiff = dup.duration_diff !== undefined ? dup.duration_diff : 0;
+            const sizeDiffText = sizeDiff === 0 ? '' : `(${sizeDiff > 0 ? '+' : ''}${sizeDiff} bytes)`;
+            const durDiffText = durDiff === 0 ? '' : `(${durDiff > 0 ? '+' : ''}${durDiff}s)`;
+            
+            html += `
+              <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-gray-900">${dup.filepath.split('/').pop()}</p>
+                    <p class="text-[11px] text-gray-400 font-mono break-all">${dup.relative_path || dup.filepath}</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                      ${dup.size_human || human_size(dup.filesize)} ${sizeDiffText}
+                      · ${dup.duration_human || human_duration(dup.duration)} ${durDiffText}
+                    </p>
+                    <audio controls class="mt-2 w-full"><source src="/api/audio/${dup.id}"></audio>
+                    
+                    <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
+                      <div>
+                        <p class="text-gray-400 mb-1">SongRec</p>
+                        <p class="font-medium truncate">${dup.sr_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.sr_title || '-'}</p>
+                      </div>
+                      <div>
+                        <p class="text-gray-400 mb-1">AcoustID</p>
+                        <p class="font-medium truncate">${dup.ac_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.ac_title || '-'}</p>
+                      </div>
+                      <div>
+                        <p class="text-gray-400 mb-1">Genius</p>
+                        <p class="font-medium truncate">${dup.gn_artist || '-'}</p>
+                        <p class="text-gray-500 truncate">${dup.gn_title || '-'}</p>
+                      </div>
+                    </div>
+                    
+                    <div class="flex gap-2 mt-3">
+                      <button onclick="act(${dup.id}, 'approve')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm">Approve</button>
+                      <button onclick="act(${dup.id}, 'reject')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 shadow-sm">Reject</button>
+                      <button onclick="act(${dup.id}, 'delete')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-rose-700 bg-rose-50 hover:bg-rose-100 shadow-sm">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+        } else {
+          html += `<p class="text-gray-500 text-center py-4">No similar tracks found.</p>`;
+        }
+
+        html += `
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+            <button onclick="closeFuzzyModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium shadow-sm transition-colors">
+              Close
+            </button>
+          </div>
+        `;
+
+        content.innerHTML = html;
+      } catch (err) {
+        content.innerHTML = `<p class="text-red-600 p-4">Error loading similar tracks: ${err.message}</p>`;
+        console.error("Error loading fuzzy duplicates:", err);
+      }
+    }
+
+    function closeFuzzyModal() {
+      document.getElementById('fuzzy-modal').classList.remove('show');
+      currentModalId = null;
+    }
+
+    // Helper functions for human-readable formatting
+    function human_size(num_bytes) {
+      if (num_bytes === undefined || num_bytes === null) return "?";
+      let size = float(num_bytes);
+      for (const unit of ["B", "KB", "MB", "GB"]) {
+        if (size < 1024 || unit === "GB") {
+          return unit === "B" ? `${Math.round(size)} ${unit}` : `${size.toFixed(1)} ${unit}`;
+        }
+        size /= 1024;
+      }
+      return "?";
+    }
+
+    function human_duration(seconds) {
+      if (seconds === undefined || seconds === null) return "?";
+      seconds = Math.floor(seconds);
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // Close modals when clicking outside
+    document.getElementById('duplicate-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeDuplicateModal();
+    });
+    document.getElementById('fuzzy-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeFuzzyModal();
+    });
+
+    // Close modals with Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDuplicateModal();
+        closeFuzzyModal();
+      }
+    });
   </script>
-</body>
-</html>

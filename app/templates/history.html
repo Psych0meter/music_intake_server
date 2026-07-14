@@ -8,7 +8,8 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
-    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; }
+    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .item-row.is-selected { background-color: #eef2ff; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800">
@@ -34,6 +35,22 @@
         <input type="text" id="text-filter" placeholder="Search history..." value="{{ search_query }}"
                class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-64 px-3 py-2 shadow-sm">
       </div>
+      <button onclick="exportHistory()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
+        Export CSV
+      </button>
+    </div>
+
+    <!-- Bulk toolbar for history -->
+    <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-indigo-600 text-white rounded-xl px-4 py-3 shadow-sm">
+      <span class="text-sm font-medium"><span id="selected-count">0</span> selected</span>
+      <div class="flex items-center gap-2">
+        <button onclick="bulkDeleteHistory()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-500 hover:bg-rose-400">
+          Delete Selected
+        </button>
+        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-700 hover:bg-indigo-800">
+          Clear
+        </button>
+      </div>
     </div>
 
     <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -41,6 +58,9 @@
         <table class="w-full table-auto text-left border-collapse">
           <thead class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
             <tr>
+              <th class="px-4 py-4 w-12">
+                <input type="checkbox" id="select-all" class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleSelectAll(this.checked)">
+              </th>
               <th class="px-4 py-4">Status</th>
               <th class="px-4 py-4">Track</th>
               <th class="px-4 py-4">Artist</th>
@@ -54,7 +74,10 @@
           </thead>
           <tbody class="divide-y divide-gray-100">
             {% for row in rows %}
-            <tr class="hover:bg-gray-50/70 transition-colors">
+            <tr id="hrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors">
+              <td class="px-4 py-4">
+                <input type="checkbox" class="row-checkbox rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+              </td>
               <td class="px-4 py-4">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ row.status_class }}">
                   {{ row.status|capitalize }}
@@ -76,7 +99,7 @@
               <td class="px-4 py-4 text-center text-sm text-gray-500">{{ row.size_human }}</td>
               <td class="px-4 py-4 text-center text-sm text-gray-500">{{ row.created_at[:10] if row.created_at else '?' }}</td>
               <td class="px-4 py-4 text-right whitespace-nowrap">
-                <button onclick="deleteTrack({{ row.id }})" class="px-3 py-1 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+                <button onclick="deleteTrack({{ row.id }}, {{ row.filepath.split('/')[-1]|tojson }})" class="px-3 py-1 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
               </td>
             </tr>
             {% endfor %}
@@ -103,6 +126,8 @@
   </div>
 
   <script>
+    const selectedIds = new Set();
+
     document.getElementById('text-filter').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const params = new URLSearchParams(window.location.search);
@@ -118,15 +143,125 @@
       window.location.search = params.toString();
     }
 
-    async function deleteTrack(id) {
-      if (!confirm('Are you sure you want to delete this track? This will remove it from disk!')) return;
+    function syncCheckboxStates() {
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.checked = selectedIds.has(parseInt(cb.dataset.id));
+      });
+      document.querySelectorAll('.item-row').forEach(row => {
+        const id = parseInt(row.dataset.id);
+        row.classList.toggle('is-selected', selectedIds.has(id));
+      });
+      updateBulkToolbar();
+    }
+
+    function toggleSelect(id, checked) {
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      syncCheckboxStates();
+    }
+
+    function toggleSelectAll(checked) {
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        if (checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+      });
+      syncCheckboxStates();
+    }
+
+    function clearSelection() {
+      selectedIds.clear();
+      const selAll = document.getElementById('select-all');
+      if (selAll) selAll.checked = false;
+      syncCheckboxStates();
+    }
+
+    function updateBulkToolbar() {
+      const toolbar = document.getElementById('bulk-toolbar');
+      const count = document.getElementById('selected-count');
+      if (selectedIds.size > 0) {
+        toolbar.classList.replace('hidden', 'flex');
+        count.textContent = selectedIds.size;
+      } else {
+        toolbar.classList.replace('flex', 'hidden');
+      }
+    }
+
+    async function deleteTrack(id, filename) {
+      if (!confirm(`Delete "${filename}"?\n\nThis will permanently remove the file from disk!`)) return;
       const res = await fetch(`/api/delete/${id}`, { method: 'POST' });
       if (res.ok) {
-        window.location.reload();
+        // Remove from DOM
+        const row = document.getElementById(`hrow-${id}`);
+        if (row) row.remove();
+        selectedIds.delete(id);
+        syncCheckboxStates();
+        
+        // If no rows left, reload
+        if (document.querySelectorAll('.item-row').length === 0) {
+          window.location.reload();
+        }
       } else {
         const data = await res.json();
         alert(data.error || 'Failed to delete track');
       }
+    }
+
+    async function bulkDeleteHistory() {
+      if (selectedIds.size === 0) return;
+      
+      if (!confirm(`Delete ${selectedIds.size} selected track(s)?\n\nThis will permanently remove files from disk!`)) return;
+      
+      const ids = Array.from(selectedIds);
+      const res = await fetch('/api/delete-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ids })
+      });
+      
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const data = await res.json();
+        alert(data.error || `Failed to delete some tracks`);
+      }
+    }
+
+    function exportHistory() {
+      const rows = document.querySelectorAll('#bulk-toolbar').length > 0 
+        ? document.querySelectorAll('tbody tr') 
+        : [];
+      
+      if (rows.length === 0) {
+        alert('No tracks to export');
+        return;
+      }
+      
+      let csv = 'Status,Track,Artist,Album,Confidence,File,Size,Date\n';
+      
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const status = cells[1]?.textContent?.trim() || '';
+        const track = cells[2]?.textContent?.trim() || '';
+        const artist = cells[3]?.textContent?.trim() || '';
+        const album = cells[4]?.textContent?.trim() || '';
+        const confidence = cells[5]?.textContent?.trim() || '';
+        const file = cells[6]?.textContent?.trim() || '';
+        const size = cells[7]?.textContent?.trim() || '';
+        const date = cells[8]?.textContent?.trim() || '';
+        
+        csv += `"${status}","${track}","${artist}","${album}","${confidence}","${file}","${size}","${date}"\n`;
+      });
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `music-intake-history-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
     }
   </script>
 </body>

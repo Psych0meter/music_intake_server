@@ -139,6 +139,21 @@ def _rescan_one(conn, item_id):
     conn.commit()
     return True, None
 
+def _delete_one(conn, item_id):
+    """Delete a single item from disk and database."""
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return False, "not found"
+    try:
+        src = Path(row["filepath"])
+        if src.exists():
+            src.unlink()
+    except Exception as e:
+        return False, f"Failed to delete file: {str(e)}"
+    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+    conn.commit()
+    return True, None
+
 def _run_batch(conn, ids, fn):
     results = {}
     for item_id in ids:
@@ -451,21 +466,25 @@ def rescan(item_id):
 @app.route("/api/delete/<int:item_id>", methods=["POST"])
 def delete_item(item_id):
     conn = get_db()
-    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "not found"}), 404
-    try:
-        src = Path(row["filepath"])
-        if src.exists():
-            src.unlink()
-    except Exception as e:
-        conn.close()
-        return jsonify({"error": str(e)}), 500
-    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
-    conn.commit()
+    ok, err = _delete_one(conn, item_id)
     conn.close()
+    if not ok:
+        return jsonify({"error": err}), 404 if err == "not found" else 500
     return jsonify({"status": "deleted"})
+
+@app.route("/api/delete-batch", methods=["POST"])
+def delete_batch():
+    """Delete multiple items at once."""
+    ids = (request.get_json() or {}).get("ids", [])
+    if not ids:
+        return jsonify({"error": "No IDs provided"}), 400
+    conn = get_db()
+    results = _run_batch(conn, ids, _delete_one)
+    conn.close()
+    failed = {k: v for k, v in results.items() if not v["ok"]}
+    if failed:
+        return jsonify({"results": results, "failed": failed}), 207
+    return jsonify({"results": results})
 
 @app.route("/api/duplicates/<int:item_id>")
 def get_duplicates(item_id):
@@ -492,6 +511,53 @@ def get_duplicates(item_id):
 
     conn.close()
     return jsonify({"main": enriched[0], "duplicates": enriched[1:]})
+
+@app.route("/api/fuzzy-duplicates/<int:item_id>")
+def get_fuzzy_duplicates(item_id):
+    """
+    Get tracks with similar size and duration (fuzzy duplicate detection).
+    Useful for finding duplicates that have different hashes but similar characteristics.
+    """
+    conn = get_db()
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    # Get the main track's size and duration
+    size = row["filesize"]
+    duration = row["duration"]
+
+    if size is None or duration is None:
+        conn.close()
+        return jsonify({"error": "Cannot find fuzzy duplicates for tracks without size or duration"}), 400
+
+    # Find tracks with similar size (+/- 1KB) and duration (+/- 0.5 seconds)
+    # Exclude the main track itself
+    fuzzy_dupes = conn.execute("""
+        SELECT * FROM queue 
+        WHERE id != ? 
+        AND filesize IS NOT NULL 
+        AND duration IS NOT NULL
+        AND ABS(filesize - ?) <= 1024 
+        AND ABS(duration - ?) <= 0.5
+        ORDER BY ABS(filesize - ?), ABS(duration - ?)
+        LIMIT 20
+    """, (item_id, size, duration, size, duration)).fetchall()
+
+    enriched = []
+    for r in fuzzy_dupes:
+        d = dict(r)
+        d["size_human"] = human_size(r["filesize"])
+        d["duration_human"] = human_duration(r["duration"])
+        d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
+        d["relative_path"] = relative_source(r["filepath"])
+        d["size_diff"] = r["filesize"] - size
+        d["duration_diff"] = r["duration"] - duration
+        enriched.append(d)
+
+    conn.close()
+    return jsonify({"main": dict(row), "fuzzy_duplicates": enriched})
 
 @app.route("/api/approve-batch", methods=["POST"])
 def approve_batch():
@@ -553,6 +619,48 @@ def edit(item_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "updated"})
+
+@app.route("/api/clear-logs", methods=["POST"])
+def clear_all_logs():
+    """Clear all log files."""
+    log_dir = Path("/opt/music-intake/logs")
+    log_files = ['recognize.log', 'web.log', 'beets-import.log']
+    
+    for log_file in log_files:
+        log_path = log_dir / log_file
+        try:
+            if log_path.exists():
+                log_path.write_text('')
+        except Exception as e:
+            logger.error(f"Failed to clear {log_file}: {e}")
+    
+    return jsonify({"status": "cleared"})
+
+@app.route("/api/clear-log/<name>", methods=["POST"])
+def clear_log(name):
+    """Clear a specific log file."""
+    log_dir = Path("/opt/music-intake/logs")
+    log_path = log_dir / f"{name}.log"
+    
+    try:
+        if log_path.exists():
+            log_path.write_text('')
+        return jsonify({"status": "cleared"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/download-log/<name>")
+def download_log(name):
+    """Download a log file."""
+    log_dir = Path("/opt/music-intake/logs")
+    log_path = log_dir / f"{name}.log"
+    
+    try:
+        if log_path.exists():
+            return send_file(log_path, as_attachment=True, download_name=f"{name}.log")
+        return jsonify({"error": "Log file not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
