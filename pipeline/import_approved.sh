@@ -13,7 +13,6 @@ mkdir -p /opt/music-intake/logs
 beet -c /opt/music-intake/config/beets-config.yaml import \
   --autotag \
   --quiet \
-  --no-incremental \
   /mnt/nas-intake/approved/ \
   >> /opt/music-intake/logs/beets-import.log 2>&1
 
