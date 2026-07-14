@@ -11,7 +11,6 @@ mkdir -p /opt/music-intake/logs
 
 # Auto-import with no prompts - keep all duplicates
 beet -c /opt/music-intake/config/beets-config.yaml import \
-  --autotag \
   --quiet \
   /mnt/nas-intake/approved/ \
   >> /opt/music-intake/logs/beets-import.log 2>&1
