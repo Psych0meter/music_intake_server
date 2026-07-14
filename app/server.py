@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import re
+import sys
 import shutil
 import sqlite3
 from logging.handlers import RotatingFileHandler
@@ -21,21 +22,42 @@ REJECTED = NAS_INTAKE / "rejected"
 app = Flask(__name__)
 
 # --- Logging ---
-def setup_logging(name):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+
+def setup_logging():
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from pathlib import Path
+
     log_dir = Path("/opt/music-intake/logs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        log_dir / f"{name}.log",
-        maxBytes=10*1024*1024,
+
+    # Configure root logger (captures Flask logs)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # File handler for web.log
+    file_handler = RotatingFileHandler(
+        log_dir / "web.log",
+        maxBytes=10*1024*1024,  # 10MB
         backupCount=5
     )
-    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
-    logger.addHandler(handler)
-    return logger
+    file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    root_logger.addHandler(file_handler)
 
-logger = setup_logging('web')
+    # Console handler (optional)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    root_logger.addHandler(console_handler)
+
+    return root_logger
+
+# Initialize logging
+logger = setup_logging()
+app.logger = logger  # Connect Flask's logger to our logger
 
 # --- Helpers ---
 def load_scan_roots():
@@ -369,22 +391,26 @@ def history():
 
 @app.route("/logs")
 def view_logs():
+    log_dir = Path("/opt/music-intake/logs")
     log_files = {
-        'recognize': '/opt/music-intake/logs/recognize.log',
-        'web': '/opt/music-intake/logs/web.log',
-        'beets': '/opt/music-intake/logs/beets-import.log'
+        'recognize': log_dir / 'recognize.log',
+        'web': log_dir / 'web.log',
+        'beets': log_dir / 'beets-import.log'
     }
 
     logs = {}
     for name, path in log_files.items():
         try:
-            with open(path, 'r') as f:
-                logs[name] = {
-                    'content': f.read().splitlines()[-500:],
-                    'path': path
-                }
-        except FileNotFoundError:
-            logs[name] = {'content': [], 'path': path, 'error': 'File not found'}
+            if path.exists():
+                with open(path, 'r') as f:
+                    logs[name] = {
+                        'content': f.read().splitlines()[-500:],  # Last 500 lines
+                        'path': str(path)
+                    }
+            else:
+                logs[name] = {'content': [], 'path': str(path), 'error': 'File not found'}
+        except Exception as e:
+            logs[name] = {'content': [], 'path': str(path), 'error': str(e)}
 
     return render_template("logs.html", logs=logs)
 
