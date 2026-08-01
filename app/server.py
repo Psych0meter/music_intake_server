@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import logging
 import math
 import os
 import re
 import shutil
 import sqlite3
-from logging.handlers import RotatingFileHandler
+import sys
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
@@ -21,21 +20,42 @@ REJECTED = NAS_INTAKE / "rejected"
 app = Flask(__name__)
 
 # --- Logging ---
-def setup_logging(name):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+
+def setup_logging():
+    import logging
+    from logging.handlers import RotatingFileHandler
+    from pathlib import Path
+
     log_dir = Path("/opt/music-intake/logs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        log_dir / f"{name}.log",
-        maxBytes=10*1024*1024,
+
+    # Configure root logger (captures Flask logs)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # File handler for web.log
+    file_handler = RotatingFileHandler(
+        log_dir / "web.log",
+        maxBytes=10*1024*1024,  # 10MB
         backupCount=5
     )
-    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
-    logger.addHandler(handler)
-    return logger
+    file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    root_logger.addHandler(file_handler)
 
-logger = setup_logging('web')
+    # Console handler (optional)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    root_logger.addHandler(console_handler)
+
+    return root_logger
+
+# Initialize logging
+logger = setup_logging()
+app.logger = logger  # Connect Flask's logger to our logger
 
 # --- Helpers ---
 def load_scan_roots():
@@ -95,6 +115,20 @@ def relative_source(filepath_str):
     return filepath_str
 
 # --- Approve/Reject/Rescan Helpers ---
+def _unique_dest(dest_file):
+    """Return dest_file, or a "name (1).ext", "name (2).ext", ... variant
+    if it already exists, so approving/rejecting a second file never
+    silently clobbers a file already sitting at that destination."""
+    if not dest_file.exists():
+        return dest_file
+    stem, suffix = dest_file.stem, dest_file.suffix
+    n = 1
+    while True:
+        candidate = dest_file.with_name(f"{stem} ({n}){suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
 def _approve_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
@@ -107,12 +141,12 @@ def _approve_one(conn, item_id):
     src = Path(row["filepath"])
     extension = src.suffix
     dest_dir = APPROVED / artist / album
-    dest_file = dest_dir / f"{title}{extension}"
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = _unique_dest(dest_dir / f"{title}{extension}")
         shutil.move(str(src), str(dest_file))
     except Exception as e:
-        return False, f"File system move failed: {str(e)}"
+        return False, f"File system move failed: {e!s}"
     conn.execute("UPDATE queue SET status = 'approved' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -122,11 +156,11 @@ def _reject_one(conn, item_id):
     if not row:
         return False, "not found"
     src = Path(row["filepath"])
-    dest = REJECTED / src.name
     try:
+        dest = _unique_dest(REJECTED / src.name)
         shutil.move(str(src), str(dest))
     except Exception as e:
-        return False, f"Failed to move file to rejected: {str(e)}"
+        return False, f"Failed to move file to rejected: {e!s}"
     conn.execute("UPDATE queue SET status = 'rejected' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -135,6 +169,21 @@ def _rescan_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
         return False, "not found"
+    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+    conn.commit()
+    return True, None
+
+def _delete_one(conn, item_id):
+    """Delete a single item from disk and database."""
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return False, "not found"
+    try:
+        src = Path(row["filepath"])
+        if src.exists():
+            src.unlink()
+    except Exception as e:
+        return False, f"Failed to delete file: {e!s}"
     conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -162,8 +211,8 @@ def index():
     sort_by = request.args.get("sort", "confidence")
     order = request.args.get("order", "asc")
 
-    if page < 1:
-        page = 1
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 500)
 
     conn = get_db()
     query_conditions = ["status = 'pending'"]
@@ -204,8 +253,7 @@ def index():
     ).fetchone()[0]
 
     total_pages = max(1, math.ceil(total_count / per_page))
-    if page > total_pages:
-        page = total_pages
+    page = min(page, total_pages)
     offset = (page - 1) * per_page
 
     final_query = f"""
@@ -290,6 +338,9 @@ def history():
     status_filter = request.args.get("status", "all")
     search_query = request.args.get("q", "").strip()
 
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 500)
+
     conn = get_db()
     query_conditions = []
     query_params = []
@@ -312,8 +363,7 @@ def history():
     ).fetchone()[0]
 
     total_pages = max(1, math.ceil(total_count / per_page))
-    if page > total_pages:
-        page = total_pages
+    page = min(page, total_pages)
     offset = (page - 1) * per_page
 
     final_query = f"""
@@ -354,22 +404,26 @@ def history():
 
 @app.route("/logs")
 def view_logs():
+    log_dir = Path("/opt/music-intake/logs")
     log_files = {
-        'recognize': '/opt/music-intake/logs/recognize.log',
-        'web': '/opt/music-intake/logs/web.log',
-        'beets': '/opt/music-intake/logs/beets-import.log'
+        'recognize': log_dir / 'recognize.log',
+        'web': log_dir / 'web.log',
+        'beets': log_dir / 'beets-import.log'
     }
 
     logs = {}
     for name, path in log_files.items():
         try:
-            with open(path, 'r') as f:
-                logs[name] = {
-                    'content': f.read().splitlines()[-500:],
-                    'path': path
-                }
-        except FileNotFoundError:
-            logs[name] = {'content': [], 'path': path, 'error': 'File not found'}
+            if path.exists():
+                with open(path, 'r') as f:
+                    logs[name] = {
+                        'content': f.read().splitlines()[-500:],  # Last 500 lines
+                        'path': str(path)
+                    }
+            else:
+                logs[name] = {'content': [], 'path': str(path), 'error': 'File not found'}
+        except Exception as e:
+            logs[name] = {'content': [], 'path': str(path), 'error': str(e)}
 
     return render_template("logs.html", logs=logs)
 
@@ -451,21 +505,25 @@ def rescan(item_id):
 @app.route("/api/delete/<int:item_id>", methods=["POST"])
 def delete_item(item_id):
     conn = get_db()
-    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"error": "not found"}), 404
-    try:
-        src = Path(row["filepath"])
-        if src.exists():
-            src.unlink()
-    except Exception as e:
-        conn.close()
-        return jsonify({"error": str(e)}), 500
-    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
-    conn.commit()
+    ok, err = _delete_one(conn, item_id)
     conn.close()
+    if not ok:
+        return jsonify({"error": err}), 404 if err == "not found" else 500
     return jsonify({"status": "deleted"})
+
+@app.route("/api/delete-batch", methods=["POST"])
+def delete_batch():
+    """Delete multiple items at once."""
+    ids = (request.get_json() or {}).get("ids", [])
+    if not ids:
+        return jsonify({"error": "No IDs provided"}), 400
+    conn = get_db()
+    results = _run_batch(conn, ids, _delete_one)
+    conn.close()
+    failed = {k: v for k, v in results.items() if not v["ok"]}
+    if failed:
+        return jsonify({"results": results, "failed": failed}), 207
+    return jsonify({"results": results})
 
 @app.route("/api/duplicates/<int:item_id>")
 def get_duplicates(item_id):
@@ -492,6 +550,53 @@ def get_duplicates(item_id):
 
     conn.close()
     return jsonify({"main": enriched[0], "duplicates": enriched[1:]})
+
+@app.route("/api/fuzzy-duplicates/<int:item_id>")
+def get_fuzzy_duplicates(item_id):
+    """
+    Get tracks with similar size and duration (fuzzy duplicate detection).
+    Useful for finding duplicates that have different hashes but similar characteristics.
+    """
+    conn = get_db()
+    row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    # Get the main track's size and duration
+    size = row["filesize"]
+    duration = row["duration"]
+
+    if size is None or duration is None:
+        conn.close()
+        return jsonify({"error": "Cannot find fuzzy duplicates for tracks without size or duration"}), 400
+
+    # Find tracks with similar size (+/- 1KB) and duration (+/- 0.5 seconds)
+    # Exclude the main track itself
+    fuzzy_dupes = conn.execute("""
+        SELECT * FROM queue 
+        WHERE id != ? 
+        AND filesize IS NOT NULL 
+        AND duration IS NOT NULL
+        AND ABS(filesize - ?) <= 1024 
+        AND ABS(duration - ?) <= 0.5
+        ORDER BY ABS(filesize - ?), ABS(duration - ?)
+        LIMIT 20
+    """, (item_id, size, duration, size, duration)).fetchall()
+
+    enriched = []
+    for r in fuzzy_dupes:
+        d = dict(r)
+        d["size_human"] = human_size(r["filesize"])
+        d["duration_human"] = human_duration(r["duration"])
+        d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
+        d["relative_path"] = relative_source(r["filepath"])
+        d["size_diff"] = r["filesize"] - size
+        d["duration_diff"] = r["duration"] - duration
+        enriched.append(d)
+
+    conn.close()
+    return jsonify({"main": dict(row), "fuzzy_duplicates": enriched})
 
 @app.route("/api/approve-batch", methods=["POST"])
 def approve_batch():
@@ -553,6 +658,54 @@ def edit(item_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "updated"})
+
+KNOWN_LOG_NAMES = {"recognize", "web", "beets-import"}
+
+@app.route("/api/clear-logs", methods=["POST"])
+def clear_all_logs():
+    """Clear all log files."""
+    log_dir = Path("/opt/music-intake/logs")
+    log_files = ['recognize.log', 'web.log', 'beets-import.log']
+    
+    for log_file in log_files:
+        log_path = log_dir / log_file
+        try:
+            if log_path.exists():
+                log_path.write_text('')
+        except Exception as e:
+            logger.error(f"Failed to clear {log_file}: {e}")
+    
+    return jsonify({"status": "cleared"})
+
+@app.route("/api/clear-log/<name>", methods=["POST"])
+def clear_log(name):
+    """Clear a specific log file."""
+    if name not in KNOWN_LOG_NAMES:
+        return jsonify({"error": "unknown log"}), 404
+    log_dir = Path("/opt/music-intake/logs")
+    log_path = log_dir / f"{name}.log"
+    
+    try:
+        if log_path.exists():
+            log_path.write_text('')
+        return jsonify({"status": "cleared"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/download-log/<name>")
+def download_log(name):
+    """Download a log file."""
+    if name not in KNOWN_LOG_NAMES:
+        return jsonify({"error": "unknown log"}), 404
+    log_dir = Path("/opt/music-intake/logs")
+    log_path = log_dir / f"{name}.log"
+    
+    try:
+        if log_path.exists():
+            return send_file(log_path, as_attachment=True, download_name=f"{name}.log")
+        return jsonify({"error": "Log file not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

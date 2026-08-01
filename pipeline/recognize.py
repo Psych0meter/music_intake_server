@@ -146,7 +146,7 @@ def songrec_identify(filepath):
     try:
         result = subprocess.run(
             ["songrec", "recognize", "-j", str(filepath)],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, text=True, timeout=60, check=False
         )
         if not result.stdout or not result.stdout.strip():
             logger.info(f"No acoustic match found for {filepath}")
@@ -242,7 +242,7 @@ def transcribe_clip(filepath, offset, duration):
             segments, _ = get_whisper_model().transcribe(
                 tmp.name,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
+                vad_parameters={"min_silence_duration_ms": 500},
                 no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4
             )
@@ -436,7 +436,6 @@ def scan_loop(poll_seconds=15):
         "ON CONFLICT(id) DO NOTHING"
     )
     conn.commit()
-    last_file_count = 0
 
     try:
         while True:
@@ -454,20 +453,23 @@ def scan_loop(poll_seconds=15):
                 for f in all_files:
                     f_str = str(f)
                     f_mtime = f.stat().st_mtime
-                    if f_str not in queued_paths:
-                        pending_files.append(f)
-                    elif f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime:
+                    is_new = f_str not in queued_paths
+                    is_changed = f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime
+                    if is_new or is_changed:
                         pending_files.append(f)
 
                 total = len(all_files)
-                if len(all_files) != last_file_count or pending_files:
-                    update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
-                    last_file_count = len(all_files)
+                update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
 
+                batch_start_processed = len(all_files) - len(pending_files)
                 for i, f in enumerate(pending_files):
+                    if is_paused(conn):
+                        logger.info("Pause requested mid-batch - stopping here, "
+                                    "will resume from this point when unpaused")
+                        break
                     update_scan_status(
                         conn, total=total,
-                        processed=len(all_files) - len(pending_files) + i,
+                        processed=batch_start_processed + i,
                         current_file=str(f)
                     )
                     try:
@@ -490,8 +492,8 @@ def scan_loop(poll_seconds=15):
                 logger.error(f"Global loop failure: {e}")
                 try:
                     conn.close()
-                except:
-                    pass
+                except sqlite3.Error as close_err:
+                    logger.debug(f"Error closing connection after loop failure: {close_err}")
                 conn = get_db()
 
             time.sleep(poll_seconds)
