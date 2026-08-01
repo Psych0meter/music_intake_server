@@ -146,7 +146,7 @@ def songrec_identify(filepath):
     try:
         result = subprocess.run(
             ["songrec", "recognize", "-j", str(filepath)],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, text=True, timeout=60, check=False
         )
         if not result.stdout or not result.stdout.strip():
             logger.info(f"No acoustic match found for {filepath}")
@@ -242,7 +242,7 @@ def transcribe_clip(filepath, offset, duration):
             segments, _ = get_whisper_model().transcribe(
                 tmp.name,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
+                vad_parameters={"min_silence_duration_ms": 500},
                 no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4
             )
@@ -446,20 +446,17 @@ def scan_loop(poll_seconds=15):
 
             try:
                 all_files = discover_files()
+                queued_paths = batch_already_queued(conn, all_files)
+                queued_mtimes = batch_get_mtimes(conn, [Path(p) for p in queued_paths])
 
-                # Get all filepaths already in queue
-                queued_set = set()
-                if all_files:
-                    path_strs = [str(f) for f in all_files]
-                    placeholders = ",".join("?" * len(path_strs))
-                    rows = conn.execute(
-                        f"SELECT filepath FROM queue WHERE filepath IN ({placeholders})",
-                        path_strs
-                    ).fetchall()
-                    queued_set = {row["filepath"] for row in rows}
-
-                # Only process files NOT already in queue
-                pending_files = [f for f in all_files if str(f) not in queued_set]
+                pending_files = []
+                for f in all_files:
+                    f_str = str(f)
+                    f_mtime = f.stat().st_mtime
+                    is_new = f_str not in queued_paths
+                    is_changed = f_str in queued_mtimes and queued_mtimes[f_str] != f_mtime
+                    if is_new or is_changed:
+                        pending_files.append(f)
 
                 total = len(all_files)
                 update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
@@ -495,8 +492,8 @@ def scan_loop(poll_seconds=15):
                 logger.error(f"Global loop failure: {e}")
                 try:
                     conn.close()
-                except:
-                    pass
+                except sqlite3.Error as close_err:
+                    logger.debug(f"Error closing connection after loop failure: {close_err}")
                 conn = get_db()
 
             time.sleep(poll_seconds)

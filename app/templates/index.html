@@ -673,6 +673,12 @@
     }
 
     // Duplicate Modal Functions
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
+    }
+
     async function showDuplicateModal(mainId) {
       currentModalId = mainId;
       const modal = document.getElementById('duplicate-modal');
@@ -696,27 +702,27 @@
                 <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${main.id}" checked disabled>
                 <div class="flex-1">
                   <h3 class="text-lg font-semibold text-gray-900">Main Track</h3>
-                  <p class="text-sm font-medium text-gray-900 mt-1">${main.filepath.split('/').pop()}</p>
-                  <p class="text-[11px] text-gray-400 font-mono break-all">${main.relative_path}</p>
+                  <p class="text-sm font-medium text-gray-900 mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
+                  <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(main.relative_path)}</p>
                   <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
                   <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
                   
                   <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                     <div>
                       <p class="text-gray-400 mb-1">SongRec</p>
-                      <p class="font-medium truncate">${main.sr_artist || '-'}</p>
-                      <p class="text-gray-500 truncate">${main.sr_title || '-'}</p>
+                      <p class="font-medium truncate">${escapeHtml(main.sr_artist) || '-'}</p>
+                      <p class="text-gray-500 truncate">${escapeHtml(main.sr_title) || '-'}</p>
                     </div>
                     <div>
                       <p class="text-gray-400 mb-1">AcoustID</p>
-                      <p class="font-medium truncate">${main.ac_artist || '-'}</p>
-                      <p class="text-gray-500 truncate">${main.ac_title || '-'}</p>
+                      <p class="font-medium truncate">${escapeHtml(main.ac_artist) || '-'}</p>
+                      <p class="text-gray-500 truncate">${escapeHtml(main.ac_title) || '-'}</p>
                       <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">${main.ac_score_human}</span>
                     </div>
                     <div>
                       <p class="text-gray-400 mb-1">Genius</p>
-                      <p class="font-medium truncate">${main.gn_artist || '-'}</p>
-                      <p class="text-gray-500 truncate">${main.gn_title || '-'}</p>
+                      <p class="font-medium truncate">${escapeHtml(main.gn_artist) || '-'}</p>
+                      <p class="text-gray-500 truncate">${escapeHtml(main.gn_title) || '-'}</p>
                     </div>
                   </div>
                 </div>
@@ -734,26 +740,26 @@
                 <div class="flex items-start gap-3">
                   <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${dup.id}">
                   <div class="flex-1">
-                    <p class="text-sm font-medium text-gray-900">${dup.filepath.split('/').pop()}</p>
-                    <p class="text-[11px] text-gray-400 font-mono break-all">${dup.relative_path || dup.filepath}</p>
+                    <p class="text-sm font-medium text-gray-900">${escapeHtml(dup.filepath.split('/').pop())}</p>
+                    <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
                     <p class="text-xs text-gray-500 mt-1">${dup.size_human || human_size(dup.filesize)} · ${dup.duration_human || human_duration(dup.duration)}</p>
                     <audio controls class="mt-2 w-full"><source src="/api/audio/${dup.id}"></audio>
                     
                     <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                       <div>
                         <p class="text-gray-400 mb-1">SongRec</p>
-                        <p class="font-medium truncate">${dup.sr_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.sr_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.sr_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.sr_title) || '-'}</p>
                       </div>
                       <div>
                         <p class="text-gray-400 mb-1">AcoustID</p>
-                        <p class="font-medium truncate">${dup.ac_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.ac_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.ac_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.ac_title) || '-'}</p>
                       </div>
                       <div>
                         <p class="text-gray-400 mb-1">Genius</p>
-                        <p class="font-medium truncate">${dup.gn_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.gn_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.gn_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.gn_title) || '-'}</p>
                       </div>
                     </div>
                   </div>
@@ -781,7 +787,7 @@
 
         content.innerHTML = html;
       } catch (err) {
-        content.innerHTML = `<p class="text-red-600 p-4">Error loading duplicates: ${err.message}</p>`;
+        content.innerHTML = `<p class="text-red-600 p-4">Error loading duplicates: ${escapeHtml(err.message)}</p>`;
         console.error("Error loading duplicates:", err);
       }
     }
@@ -872,8 +878,8 @@
           <div class="space-y-4">
             <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
               <h3 class="text-lg font-semibold text-gray-900">Reference Track</h3>
-              <p class="text-sm font-medium text-gray-900 mt-1">${main.filepath.split('/').pop()}</p>
-              <p class="text-[11px] text-gray-400 font-mono break-all">${main.relative_path || main.filepath}</p>
+              <p class="text-sm font-medium text-gray-900 mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
+              <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(main.relative_path || main.filepath)}</p>
               <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
               <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
             </div>
@@ -893,8 +899,8 @@
               <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex-1">
-                    <p class="text-sm font-medium text-gray-900">${dup.filepath.split('/').pop()}</p>
-                    <p class="text-[11px] text-gray-400 font-mono break-all">${dup.relative_path || dup.filepath}</p>
+                    <p class="text-sm font-medium text-gray-900">${escapeHtml(dup.filepath.split('/').pop())}</p>
+                    <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
                     <p class="text-xs text-gray-500 mt-1">
                       ${dup.size_human || human_size(dup.filesize)} ${sizeDiffText}
                       · ${dup.duration_human || human_duration(dup.duration)} ${durDiffText}
@@ -904,18 +910,18 @@
                     <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                       <div>
                         <p class="text-gray-400 mb-1">SongRec</p>
-                        <p class="font-medium truncate">${dup.sr_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.sr_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.sr_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.sr_title) || '-'}</p>
                       </div>
                       <div>
                         <p class="text-gray-400 mb-1">AcoustID</p>
-                        <p class="font-medium truncate">${dup.ac_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.ac_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.ac_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.ac_title) || '-'}</p>
                       </div>
                       <div>
                         <p class="text-gray-400 mb-1">Genius</p>
-                        <p class="font-medium truncate">${dup.gn_artist || '-'}</p>
-                        <p class="text-gray-500 truncate">${dup.gn_title || '-'}</p>
+                        <p class="font-medium truncate">${escapeHtml(dup.gn_artist) || '-'}</p>
+                        <p class="text-gray-500 truncate">${escapeHtml(dup.gn_title) || '-'}</p>
                       </div>
                     </div>
                     
@@ -943,7 +949,7 @@
 
         content.innerHTML = html;
       } catch (err) {
-        content.innerHTML = `<p class="text-red-600 p-4">Error loading similar tracks: ${err.message}</p>`;
+        content.innerHTML = `<p class="text-red-600 p-4">Error loading similar tracks: ${escapeHtml(err.message)}</p>`;
         console.error("Error loading fuzzy duplicates:", err);
       }
     }

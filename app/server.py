@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-import logging
 import math
 import os
 import re
-import sys
 import shutil
 import sqlite3
-from logging.handlers import RotatingFileHandler
+import sys
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
@@ -117,6 +115,20 @@ def relative_source(filepath_str):
     return filepath_str
 
 # --- Approve/Reject/Rescan Helpers ---
+def _unique_dest(dest_file):
+    """Return dest_file, or a "name (1).ext", "name (2).ext", ... variant
+    if it already exists, so approving/rejecting a second file never
+    silently clobbers a file already sitting at that destination."""
+    if not dest_file.exists():
+        return dest_file
+    stem, suffix = dest_file.stem, dest_file.suffix
+    n = 1
+    while True:
+        candidate = dest_file.with_name(f"{stem} ({n}){suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
 def _approve_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
@@ -129,12 +141,12 @@ def _approve_one(conn, item_id):
     src = Path(row["filepath"])
     extension = src.suffix
     dest_dir = APPROVED / artist / album
-    dest_file = dest_dir / f"{title}{extension}"
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = _unique_dest(dest_dir / f"{title}{extension}")
         shutil.move(str(src), str(dest_file))
     except Exception as e:
-        return False, f"File system move failed: {str(e)}"
+        return False, f"File system move failed: {e!s}"
     conn.execute("UPDATE queue SET status = 'approved' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -144,11 +156,11 @@ def _reject_one(conn, item_id):
     if not row:
         return False, "not found"
     src = Path(row["filepath"])
-    dest = REJECTED / src.name
     try:
+        dest = _unique_dest(REJECTED / src.name)
         shutil.move(str(src), str(dest))
     except Exception as e:
-        return False, f"Failed to move file to rejected: {str(e)}"
+        return False, f"Failed to move file to rejected: {e!s}"
     conn.execute("UPDATE queue SET status = 'rejected' WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -171,7 +183,7 @@ def _delete_one(conn, item_id):
         if src.exists():
             src.unlink()
     except Exception as e:
-        return False, f"Failed to delete file: {str(e)}"
+        return False, f"Failed to delete file: {e!s}"
     conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
     conn.commit()
     return True, None
@@ -199,8 +211,8 @@ def index():
     sort_by = request.args.get("sort", "confidence")
     order = request.args.get("order", "asc")
 
-    if page < 1:
-        page = 1
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 500)
 
     conn = get_db()
     query_conditions = ["status = 'pending'"]
@@ -241,8 +253,7 @@ def index():
     ).fetchone()[0]
 
     total_pages = max(1, math.ceil(total_count / per_page))
-    if page > total_pages:
-        page = total_pages
+    page = min(page, total_pages)
     offset = (page - 1) * per_page
 
     final_query = f"""
@@ -327,6 +338,9 @@ def history():
     status_filter = request.args.get("status", "all")
     search_query = request.args.get("q", "").strip()
 
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 500)
+
     conn = get_db()
     query_conditions = []
     query_params = []
@@ -349,8 +363,7 @@ def history():
     ).fetchone()[0]
 
     total_pages = max(1, math.ceil(total_count / per_page))
-    if page > total_pages:
-        page = total_pages
+    page = min(page, total_pages)
     offset = (page - 1) * per_page
 
     final_query = f"""
@@ -646,6 +659,8 @@ def edit(item_id):
     conn.close()
     return jsonify({"status": "updated"})
 
+KNOWN_LOG_NAMES = {"recognize", "web", "beets-import"}
+
 @app.route("/api/clear-logs", methods=["POST"])
 def clear_all_logs():
     """Clear all log files."""
@@ -665,6 +680,8 @@ def clear_all_logs():
 @app.route("/api/clear-log/<name>", methods=["POST"])
 def clear_log(name):
     """Clear a specific log file."""
+    if name not in KNOWN_LOG_NAMES:
+        return jsonify({"error": "unknown log"}), 404
     log_dir = Path("/opt/music-intake/logs")
     log_path = log_dir / f"{name}.log"
     
@@ -678,6 +695,8 @@ def clear_log(name):
 @app.route("/api/download-log/<name>")
 def download_log(name):
     """Download a log file."""
+    if name not in KNOWN_LOG_NAMES:
+        return jsonify({"error": "unknown log"}), 404
     log_dir = Path("/opt/music-intake/logs")
     log_path = log_dir / f"{name}.log"
     
