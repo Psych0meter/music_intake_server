@@ -127,6 +127,38 @@ disk — never bind-mounted — so app updates/backups are independent of
 your NAS, and there's no risk of an app-side operation touching your
 actual library by accident.
 
+## Beets import behavior (config/beets-config.yaml)
+
+`import_approved.sh` runs `beet import --quiet` against
+`/mnt/nas-intake/approved/` every 30 minutes (`music-import.timer`).
+Two config keys are worth understanding if the import log
+(`beets-import.log`, viewable/clearable in the review UI's Logs page)
+ever shows the same files being skipped run after run:
+
+- **`duplicate_action: keep`** - the correct beets key is
+  `duplicate_action`, not `duplicate`. A file that beets considers a
+  duplicate of something already in the library is imported anyway
+  (`keep`) rather than skipped, because duplicate detection is already
+  handled upstream, before approval, in the review UI (SHA-256 filehash
+  grouping, "Show Duplicates Only"). If this were left at beets'
+  default (`ask`), quiet mode auto-resolves an "ask" to a silent skip
+  for anything that looks like a duplicate - with no indication in the
+  log beyond a bare "Skipped N paths."
+
+- **`incremental` is deliberately left unset (beets default: off).**
+  `move: yes` already gives this pipeline exactly-once import behavior
+  for free - a successfully imported file is moved out of
+  `/mnt/nas-intake/approved/`, so it's simply gone next time. beets'
+  own `incremental` tracking is redundant on top of that, and actively
+  harmful here: it permanently remembers every path it has ever
+  finished a decision on, *including one it skipped* - so a file
+  skipped once (for any reason, including the duplicate_action issue
+  above) gets silently skipped forever after, even once the underlying
+  cause is fixed, because beets never looks at it again. If you ever
+  see `beets-import.log` reporting the identical "Skipped N paths."
+  count run after run, this is why - `incremental` is what makes a
+  skip permanent instead of self-correcting.
+
 ## Scan retry / change-detection behavior
 
 A file already in the queue is only picked up again on a later poll cycle

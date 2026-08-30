@@ -7,10 +7,29 @@ import:
     copy: no
     autotag: no
     quiet_fallback: skip
-    incremental: yes
+    # incremental is deliberately left off (default: no) - this app
+    # already gets exactly-once import behavior for free from `move:
+    # yes` (a successfully imported file is moved OUT of
+    # /mnt/nas-intake/approved, so it's simply gone the next time this
+    # runs). incremental additionally remembers, forever, every path
+    # beets has ever finished a decision on - including one it SKIPPED,
+    # e.g. because of the duplicate_action bug below. With incremental
+    # on, a file skipped once is silently skipped on every future run
+    # too, even after the root cause is fixed, because beets never
+    # looks at it again - which is exactly what caused this project's
+    # "Skipped N paths" import log to repeat the same count forever.
     log: /opt/music-intake/db/beets-import.log
     quiet: yes
-    duplicate: keep
+    # NOTE: the correct beets config key is `duplicate_action`, not
+    # `duplicate` - `duplicate: keep` was silently ignored (unknown
+    # key), so this stayed at beets' actual default (`ask`), which in
+    # quiet mode (quiet: yes, above) auto-resolves to skip: anything
+    # beets considers a duplicate of something already in the library
+    # got silently skipped instead of imported. This app already does
+    # its own duplicate detection upstream in the review UI (SHA-256
+    # filehash grouping, "Show Duplicates Only"), so beets should just
+    # import - hence `keep`, not `skip`.
+    duplicate_action: keep
 
 paths:
     default: $albumartist/$album%aunique{}/$track $title
