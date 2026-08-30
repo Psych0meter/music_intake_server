@@ -56,17 +56,57 @@ WHISPER_DEVICE=cpu           # or "cuda" if this LXC has GPU passthrough
 WHISPER_COMPUTE_TYPE=int8    # int8 is fastest on CPU
 ```
 
-## Container sizing
+## Speeding up a large scan (SCAN_WORKERS)
 
-The default 4 vCPU / 4GB RAM / 12GB disk assumes the Whisper fallback is
-enabled (it's the only CPU/RAM-heavy step; everything else is light).
-If you don't plan to use it:
+`recognize.py` identifies files concurrently: `SCAN_WORKERS` files are
+in flight at once, each going through SongRec/AcoustID/iTunes (and
+Genius/Whisper if enabled). Nearly all of that per-file time is network/
+subprocess *wait*, not CPU, so this is what actually puts extra vCPUs to
+work - it's the difference between a 2000-track library taking most of a
+day (one file fully done, start to finish, before the next begins) and
+taking a couple of hours.
 
-```bash
-pct set <CTID> -cores 2 -memory 2048
+Defaults to `min(8, cpu_count)`. Override in `config/secrets.env`:
+
+```
+SCAN_WORKERS=8
 ```
 
-If you do use it and have an AVX2-capable Proxmox node available,
+then `systemctl restart music-recognize.service`. Things to weigh when
+tuning it:
+
+- **Raise it** if you have spare cores, a fast connection to your NAS
+  source, and a big backlog to get through - the identification calls
+  parallelize well since they're independent per file.
+- **Lower it** if you start seeing AcoustID/iTunes/Genius errors or
+  timeouts in `recognize.log` (you're outrunning their rate limits), or
+  if scanning noticeably slows down NAS access for other things (you're
+  saturating the mount's bandwidth/IOPS, especially over network storage
+  with many concurrent reads).
+- The Whisper fallback (if enabled) is the one genuinely CPU-heavy step,
+  and multiple concurrent transcriptions will compete for the same
+  cores - if you rely on it heavily, err toward a lower `SCAN_WORKERS`
+  and more vCPUs, rather than a very high `SCAN_WORKERS` on a small core
+  count.
+
+## Container sizing
+
+vCPU count should roughly track `SCAN_WORKERS`, since that's how many
+files can genuinely be worked on at once - a high `SCAN_WORKERS` on a
+low core count doesn't help much once you're saturating the box's
+threads. RAM usage is modest even with many workers (a few tens of MB
+per in-flight file for audio decode, well under 1GB total in most
+setups) - the Whisper fallback's model is the only meaningfully sized
+consumer of RAM if you enable it.
+
+If you don't plan to use the Whisper fallback, 2-4 vCPU / 2GB RAM is
+plenty for `SCAN_WORKERS` in the 4-8 range:
+
+```bash
+pct set <CTID> -cores 4 -memory 2048
+```
+
+If you do use Whisper and have an AVX2-capable Proxmox node available,
 placing this LXC there will meaningfully speed up transcription (Whisper's
 CTranslate2 backend benefits significantly from AVX2).
 

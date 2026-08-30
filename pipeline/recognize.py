@@ -24,7 +24,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -44,7 +46,26 @@ WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 _whisper_model = None
+_whisper_lock = threading.Lock()
 SUPPORTED_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".wav"}
+
+# How many files to identify concurrently. Nearly all of the per-file cost
+# (SongRec subprocess, AcoustID/iTunes/Genius HTTP round-trips) is I/O wait,
+# not CPU - the old strictly-one-file-at-a-time loop meant extra vCPUs never
+# actually got used no matter how many you gave the container. Default scales
+# with available cores (capped at 8 so a big box doesn't hammer AcoustID/
+# iTunes/Genius or a network NAS mount too hard); override via
+# SCAN_WORKERS in config/secrets.env.
+SCAN_WORKERS = max(1, int(os.environ.get("SCAN_WORKERS", str(min(8, os.cpu_count() or 4)))))
+
+# Shared connection-pooled session for the iTunes/Genius HTTP calls, sized
+# for SCAN_WORKERS concurrent requests instead of opening a fresh
+# connection per call. requests.Session is safe to share across threads.
+_http_session = requests.Session()
+_http_session.mount(
+    "https://",
+    requests.adapters.HTTPAdapter(pool_maxsize=max(10, SCAN_WORKERS))
+)
 
 # --- Logging Setup ---
 def setup_logging():
@@ -228,7 +249,7 @@ def itunes_verify(artist, title):
     if not artist or not title:
         return False
     try:
-        resp = requests.get(
+        resp = _http_session.get(
             "https://itunes.apple.com/search",
             params={"term": f"{artist} {title}", "entity": "song", "limit": 1},
             timeout=10,
@@ -251,10 +272,12 @@ def itunes_verify(artist, title):
 def get_whisper_model():
     global _whisper_model
     if _whisper_model is None:
-        from faster_whisper import WhisperModel
-        logger.info(f"Loading Whisper model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})")
-        _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
-        logger.info("Whisper model loaded successfully")
+        with _whisper_lock:
+            if _whisper_model is None:
+                from faster_whisper import WhisperModel
+                logger.info(f"Loading Whisper model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})")
+                _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+                logger.info("Whisper model loaded successfully")
     return _whisper_model
 
 def get_sample_windows(duration, window=20, count=3):
@@ -306,7 +329,7 @@ def genius_lyrics_search(snippet):
         return None, None
     try:
         clean_query = " ".join(snippet.split()[:12])
-        resp = requests.get(
+        resp = _http_session.get(
             "https://api.genius.com/search",
             params={"q": clean_query, "type": "song"},
             headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
@@ -379,7 +402,13 @@ def best_pair_match(candidates):
                 best = (avg, candidates[i], candidates[j])
     return best
 
-def process_file(conn, filepath):
+def identify_and_tag(filepath):
+    """Runs the full identification pipeline for one file (SongRec,
+    AcoustID, iTunes tie-break, optional Genius/Whisper fallback), writes
+    the resulting tags in place, and returns the fields the caller should
+    store in the queue row. Touches only `filepath` and the network -
+    never the database or any other shared mutable state - so it's safe
+    to call from multiple worker threads at once (see scan_loop)."""
     duration = probe_duration(filepath)
 
     logger.info(f"Processing: {filepath.name}")
@@ -453,6 +482,16 @@ def process_file(conn, filepath):
     mtime = filepath.stat().st_mtime
     filehash = compute_filehash(filepath)
 
+    return {
+        "artist": artist, "title": title, "album": album, "confidence": confidence,
+        "filesize": filesize, "duration": duration, "filehash": filehash,
+        "sr_artist": sr_artist, "sr_title": sr_title, "sr_album": sr_album,
+        "ac_artist": ac_artist, "ac_title": ac_title, "ac_score": score,
+        "gn_artist": gn_artist, "gn_title": gn_title, "agreement": agreement,
+        "mtime": mtime,
+    }
+
+def _write_queue_row(conn, filepath, result):
     conn.execute(
         "INSERT INTO queue "
         "(filepath, artist, title, album, confidence, filesize, duration, filehash, "
@@ -465,11 +504,27 @@ def process_file(conn, filepath):
         "sr_album=excluded.sr_album, ac_artist=excluded.ac_artist, ac_title=excluded.ac_title, "
         "ac_score=excluded.ac_score, gn_artist=excluded.gn_artist, gn_title=excluded.gn_title, "
         "agreement=excluded.agreement, error=NULL, status='pending', mtime=excluded.mtime",
-        (str(filepath), artist, title, album, confidence, filesize, duration, filehash,
-         sr_artist, sr_title, sr_album, ac_artist, ac_title, score, gn_artist, gn_title, agreement, mtime)
+        (str(filepath), result["artist"], result["title"], result["album"], result["confidence"],
+         result["filesize"], result["duration"], result["filehash"],
+         result["sr_artist"], result["sr_title"], result["sr_album"],
+         result["ac_artist"], result["ac_title"], result["ac_score"],
+         result["gn_artist"], result["gn_title"], result["agreement"], result["mtime"])
     )
     conn.commit()
-    logger.info(f"Queued: {filepath.name} -> {artist} / {title} - {album or '?'} ({confidence}%)")
+    logger.info(
+        f"Queued: {filepath.name} -> {result['artist']} / {result['title']} - "
+        f"{result['album'] or '?'} ({result['confidence']}%)"
+    )
+
+def process_file(conn, filepath):
+    """Synchronous single-file entry point: identify, tag, and write the
+    queue row, all on the caller's connection/thread. Used by
+    scripts/dev-test-track.sh and anywhere else that wants one file done
+    end-to-end. scan_loop() does NOT call this - it runs identify_and_tag()
+    in a worker pool and writes rows back on the main thread instead, so
+    multiple files can be identified concurrently (see SCAN_WORKERS)."""
+    result = identify_and_tag(filepath)
+    _write_queue_row(conn, filepath, result)
 
 def scan_loop(poll_seconds=15):
     conn = get_db()
@@ -479,6 +534,7 @@ def scan_loop(poll_seconds=15):
         "ON CONFLICT(id) DO NOTHING"
     )
     conn.commit()
+    logger.info(f"Scan loop starting (SCAN_WORKERS={SCAN_WORKERS})")
 
     try:
         while True:
@@ -512,43 +568,68 @@ def scan_loop(poll_seconds=15):
                 update_scan_status(conn, total=total, processed=0, current_file=None, reset_start=True)
 
                 processed_count = 0
-                purged_mid_batch = False
-                for f in pending_files:
-                    if is_paused(conn):
-                        logger.info("Pause requested mid-batch - stopping here, "
-                                    "will resume from this point when unpaused")
-                        break
-                    if get_generation(conn) != batch_generation:
-                        # Purge Queue was clicked while this batch was
-                        # running: the rows for the files below were
-                        # just deleted, so stop immediately instead of
-                        # continuing to silently re-insert them - the
-                        # next cycle will re-discover whatever's still
-                        # actually on disk and start a fresh batch.
-                        logger.info("Queue purged mid-batch - stopping current batch early")
-                        purged_mid_batch = True
-                        break
-                    update_scan_status(
-                        conn, total=total,
-                        processed=processed_count,
-                        current_file=str(f)
-                    )
-                    try:
-                        process_file(conn, f)
-                    except Exception as e:
-                        logger.error(f"Failed to process file {f}: {e}")
-                        try:
-                            conn.execute(
-                                "INSERT INTO queue (filepath, confidence, error, status, mtime) VALUES (?, 0.0, ?, 'pending', ?) "
-                                "ON CONFLICT(filepath) DO UPDATE SET error=excluded.error, status='pending', mtime=excluded.mtime",
-                                (str(f), str(e), f.stat().st_mtime)
-                            )
-                            conn.commit()
-                        except Exception as db_err:
-                            logger.error(f"Failed logging error: {db_err}")
-                    processed_count += 1
+                stopped_early = False
 
-                if not purged_mid_batch:
+                # Files are IDENTIFIED (SongRec/AcoustID/iTunes/Genius -
+                # almost entirely network/subprocess wait, not CPU) up to
+                # SCAN_WORKERS at a time in worker threads. The DB write
+                # for each result happens back here on the single main
+                # connection, one at a time, as results come in - SQLite
+                # connections aren't safe to share across threads, and
+                # writes need to be serialized anyway.
+                if pending_files:
+                    pool = ThreadPoolExecutor(max_workers=SCAN_WORKERS)
+                    futures = {pool.submit(identify_and_tag, f): f for f in pending_files}
+                    try:
+                        for future in as_completed(futures):
+                            f = futures[future]
+
+                            if is_paused(conn):
+                                logger.info("Pause requested mid-batch - stopping here, "
+                                            "will resume from this point when unpaused")
+                                stopped_early = True
+                                break
+                            if get_generation(conn) != batch_generation:
+                                # Purge Queue was clicked while this batch was
+                                # running: rows were just deleted, so stop
+                                # writing further results immediately instead
+                                # of re-inserting them - the next cycle will
+                                # re-discover whatever's still actually on
+                                # disk and start a fresh batch.
+                                logger.info("Queue purged mid-batch - stopping current batch early")
+                                stopped_early = True
+                                break
+
+                            try:
+                                result = future.result()
+                            except Exception as e:
+                                logger.error(f"Failed to process file {f}: {e}")
+                                try:
+                                    conn.execute(
+                                        "INSERT INTO queue (filepath, confidence, error, status, mtime) VALUES (?, 0.0, ?, 'pending', ?) "
+                                        "ON CONFLICT(filepath) DO UPDATE SET error=excluded.error, status='pending', mtime=excluded.mtime",
+                                        (str(f), str(e), f.stat().st_mtime)
+                                    )
+                                    conn.commit()
+                                except Exception as db_err:
+                                    logger.error(f"Failed logging error: {db_err}")
+                            else:
+                                _write_queue_row(conn, f, result)
+
+                            processed_count += 1
+                            update_scan_status(
+                                conn, total=total,
+                                processed=processed_count,
+                                current_file=str(f)
+                            )
+                    finally:
+                        # cancel_futures drops anything not yet started
+                        # (relevant on the pause/purge break above); files
+                        # whose worker already started are let finish
+                        # naturally rather than killed mid-write.
+                        pool.shutdown(wait=True, cancel_futures=True)
+
+                if not stopped_early:
                     # processed_count (not `total`) so a pause-interrupted
                     # batch correctly reports partial progress instead of
                     # falsely claiming the whole batch finished.

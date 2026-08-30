@@ -125,9 +125,11 @@ numbered `.sql` file — no application code changes needed.
 - Optional: free [Genius](https://genius.com/api-clients) token (only for
   the lyrics-transcription fallback)
 
-Default container sizing: 4 vCPU / 4GB RAM / 12GB disk — sized for the
-Whisper fallback path; drop to 2 vCPU / 2GB RAM if you don't plan to use
-it (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)).
+Default container sizing: 4 vCPU / 4GB RAM / 12GB disk. Files are
+identified concurrently (`SCAN_WORKERS`, default `min(8, cpu_count)`),
+which is what actually puts extra vCPUs to work on a large backlog -
+see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for tuning it and
+sizing guidance.
 
 ## Testing locally before deploying
 
