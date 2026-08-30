@@ -82,7 +82,10 @@ double entries.
   aside. Nothing else touches your library.
 - Files are automatically re-processed if modified on disk after being
   queued (tracked via modification time), so fixing a file externally
-  doesn't require a manual rescan
+  doesn't require a manual rescan. Files that *errored* during processing
+  are the one exception - they're left alone until you either fix/replace
+  them (which changes their mtime) or click Rescan, rather than being
+  retried every poll cycle (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md))
 
 ## Repository layout
 

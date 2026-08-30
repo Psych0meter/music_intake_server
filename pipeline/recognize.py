@@ -109,13 +109,22 @@ def discover_files():
     return files
 
 def batch_already_queued(conn, filepaths):
+    """Filepaths already present in the queue, regardless of whether they
+    previously errored. A file that failed once (corrupt, unreadable,
+    permission denied, etc.) must NOT be silently retried on every ~15s
+    poll forever - that turns one bad file into a permanent CPU-burning
+    loop that never lets the scan finish. Retrying an errored file is
+    explicit: either the user clicks Rescan in the review UI (which
+    deletes the row, so it looks "new" again next cycle), or the file's
+    mtime actually changes on disk (see is_changed below), e.g. because
+    they replaced/fixed it externally."""
     if not filepaths:
         return set()
     path_strs = [str(f) for f in filepaths]
     placeholders = ",".join("?" * len(path_strs))
-    query = f"SELECT filepath, error FROM queue WHERE filepath IN ({placeholders})"
+    query = f"SELECT filepath FROM queue WHERE filepath IN ({placeholders})"
     rows = conn.execute(query, path_strs).fetchall()
-    return {row["filepath"] for row in rows if not row["error"]}
+    return {row["filepath"] for row in rows}
 
 def batch_get_mtimes(conn, filepaths):
     if not filepaths:
@@ -344,9 +353,7 @@ def best_pair_match(candidates):
     return best
 
 def process_file(conn, filepath):
-    filesize = filepath.stat().st_size
     duration = probe_duration(filepath)
-    mtime = filepath.stat().st_mtime
 
     logger.info(f"Processing: {filepath.name}")
     sr_artist, sr_title, sr_album = songrec_identify(filepath)
@@ -408,6 +415,15 @@ def process_file(conn, filepath):
     if artist or title or album:
         write_tags(filepath, artist, title, album)
 
+    # filesize/mtime are captured AFTER any tag write above, never before:
+    # write_tags() rewrites the file in place (mutagen's audio.save()),
+    # which bumps the file's on-disk mtime. Capturing mtime earlier would
+    # store a value that's already stale by the time this row is written,
+    # so the very next scan cycle would see "mtime on disk != mtime in DB"
+    # for every successfully tagged track and reprocess it all over again
+    # - forever. That was the cause of the endless-scan / 100%-CPU bug.
+    filesize = filepath.stat().st_size
+    mtime = filepath.stat().st_mtime
     filehash = compute_filehash(filepath)
 
     conn.execute(

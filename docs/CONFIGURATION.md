@@ -87,6 +87,44 @@ disk — never bind-mounted — so app updates/backups are independent of
 your NAS, and there's no risk of an app-side operation touching your
 actual library by accident.
 
+## Scan retry / change-detection behavior
+
+A file already in the queue is only picked up again on a later poll cycle
+if one of these is true:
+
+- It's genuinely new (not in the queue yet), or
+- Its on-disk modification time no longer matches the mtime recorded the
+  last time it was successfully queued - i.e. you (or another process)
+  actually edited/replaced the file after it was scanned.
+
+A file that **errored** while processing (corrupt/unreadable, permission
+denied, transient I/O failure, etc.) is recorded with that error and then
+left alone - it is *not* auto-retried every ~15s cycle. To retry it,
+either click **Rescan** on that row in the review UI (which removes it
+from the queue so it's picked up as "new" on the next cycle), or fix the
+file on disk, which changes its mtime and triggers automatic reprocessing.
+
+> **Fixed bug (previously caused non-stop CPU usage / a scan that never
+> finished):** `mtime` used to be captured *before* tags were written to
+> the file. Since writing tags rewrites the file and bumps its real mtime,
+> every successfully identified track ended up with a stored mtime that
+> was already stale the moment its row was saved - so the *next* poll
+> cycle always saw "changed on disk" for it and reprocessed it again,
+> forever, for every tagged track in the library. `recognize.py` now
+> reads `filesize`/`mtime` *after* any tag write, so the stored value
+> matches what's actually on disk and a fully-scanned library correctly
+> settles into an idle poll (cheap directory listing + DB compare every
+> ~15s) instead of continuously reprocessing every file. The same change
+> also stopped permanently-errored files from being retried every cycle
+> (see above) - previously any file that couldn't be processed (e.g. a
+> corrupt or 0-byte file) was retried forever as well, which compounded
+> the same symptom.
+>
+> If you've hit this before upgrading, the queue may still contain rows
+> with a stale `mtime` from before the fix, which could cause one more
+> full reprocessing pass of your library after updating - that's
+> expected and self-corrects; it will not loop again afterward.
+
 ## AcoustID budget note
 
 AcoustID has no hard request cap for reasonable personal use, but avoid
