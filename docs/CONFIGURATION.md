@@ -32,6 +32,17 @@ systemctl restart music-recognize.service
 | 2 | iTunes Search (catalog verification, not fingerprinting) | Free, no key | SongRec and AcoustID disagree |
 | 3 | Local Whisper transcription + Genius lyrics search | Free, but CPU-heavy | Both of the above found *nothing at all* |
 
+> **Fixed bug (previously made the Whisper fallback run on every file
+> instead of only true dead ends):** step 3 was gated purely on whether
+> `GENIUS_ACCESS_TOKEN` was set, not on step 1 actually failing - so
+> with the fallback enabled, every single file paid for a full CPU-heavy
+> Whisper transcription even when SongRec/AcoustID already had a
+> confident match. Combined with concurrent scanning (SCAN_WORKERS),
+> that's several files transcribing at once on every file in the
+> library, which can slow a large scan down enormously. Now gated on
+> `not sr_artist and not ac_artist` as this table always documented, so
+> it only fires on the genuine dead ends it's meant for.
+
 Step 3 is **not installed by default** — it needs an extra package and
 meaningfully more CPU/RAM. To enable it:
 

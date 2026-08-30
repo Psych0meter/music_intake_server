@@ -414,7 +414,20 @@ def identify_and_tag(filepath):
     logger.info(f"Processing: {filepath.name}")
     sr_artist, sr_title, sr_album = songrec_identify(filepath)
     ac_artist, ac_title, score = acoustid_lookup(filepath)
-    gn_artist, gn_title = lyrics_identify(filepath, duration) if GENIUS_ACCESS_TOKEN else (None, None)
+    # Per docs/CONFIGURATION.md's own pipeline table, the Whisper/Genius
+    # fallback is supposed to fire only when "both of the above found
+    # nothing at all" - but this call was unconditional on GENIUS_ACCESS_
+    # TOKEN alone, so every file ran a full CPU-heavy Whisper
+    # transcription (up to three 20s clips) even when SongRec or AcoustID
+    # already had a confident match. With several files transcribing
+    # concurrently (SCAN_WORKERS), that's enough sustained CPU contention
+    # to make a whole scan dramatically slower than the identification
+    # calls alone would ever cause - now actually gated as documented.
+    gn_artist, gn_title = (
+        lyrics_identify(filepath, duration)
+        if GENIUS_ACCESS_TOKEN and not sr_artist and not ac_artist
+        else (None, None)
+    )
 
     acoustid_confidence = round(score * 100, 1) if score else 0.0
 
