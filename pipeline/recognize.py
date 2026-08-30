@@ -135,20 +135,47 @@ def batch_get_mtimes(conn, filepaths):
     rows = conn.execute(query, path_strs).fetchall()
     return {row["filepath"]: row["mtime"] for row in rows}
 
-def update_scan_status(conn, total, processed, current_file):
-    conn.execute(
-        "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
-        "VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP, 0) "
-        "ON CONFLICT(id) DO UPDATE SET "
-        "total=excluded.total, processed=excluded.processed, "
-        "current_file=excluded.current_file, updated_at=CURRENT_TIMESTAMP",
-        (total, processed, current_file)
-    )
+def update_scan_status(conn, total, processed, current_file, reset_start=False):
+    """reset_start=True marks the start of a new scan batch/pass and
+    bumps `updated_at`, which the review UI reads as the pass's start
+    time to estimate a completion ETA. Per-file progress updates within
+    that pass with reset_start=False, so `updated_at` stays fixed at the
+    pass's actual start time - if it were bumped on every file (as it
+    used to be), "time since start" would always be ~0 and the UI's
+    rate/ETA math would be meaningless."""
+    if reset_start:
+        conn.execute(
+            "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
+            "VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP, 0) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "total=excluded.total, processed=excluded.processed, "
+            "current_file=excluded.current_file, updated_at=CURRENT_TIMESTAMP",
+            (total, processed, current_file)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO scan_status (id, total, processed, current_file, updated_at, is_paused) "
+            "VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP, 0) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "total=excluded.total, processed=excluded.processed, "
+            "current_file=excluded.current_file",
+            (total, processed, current_file)
+        )
     conn.commit()
 
 def is_paused(conn):
     row = conn.execute("SELECT is_paused FROM scan_status WHERE id = 1").fetchone()
     return row and row["is_paused"] == 1
+
+def get_generation(conn):
+    """Bumped by the review UI's Purge Queue action so an in-progress
+    scan batch can notice its queue was wiped out from under it and stop
+    immediately, instead of blindly continuing to re-insert the files
+    already in its in-memory batch list (which made Purge look like it
+    "didn't clean everything" - the files it just deleted would get
+    reinserted a moment later by the pass that was already mid-stride)."""
+    row = conn.execute("SELECT generation FROM scan_status WHERE id = 1").fetchone()
+    return (row["generation"] if row and "generation" in row.keys() else 0) or 0
 
 # --- Identification Functions ---
 def songrec_identify(filepath):
@@ -474,18 +501,36 @@ def scan_loop(poll_seconds=15):
                     if is_new or is_changed:
                         pending_files.append(f)
 
-                total = len(all_files)
-                update_scan_status(conn, total=total, processed=len(all_files) - len(pending_files), current_file=None)
+                # `total`/`processed` describe THIS batch of new/changed
+                # files only (not the whole library) - the review UI's
+                # progress bar and ETA are meaningless if "total" is
+                # dominated by files that were already scanned long ago.
+                # reset_start=True stamps `updated_at` as this batch's
+                # real start time, which the UI uses for its ETA.
+                total = len(pending_files)
+                batch_generation = get_generation(conn)
+                update_scan_status(conn, total=total, processed=0, current_file=None, reset_start=True)
 
-                batch_start_processed = len(all_files) - len(pending_files)
-                for i, f in enumerate(pending_files):
+                processed_count = 0
+                purged_mid_batch = False
+                for f in pending_files:
                     if is_paused(conn):
                         logger.info("Pause requested mid-batch - stopping here, "
                                     "will resume from this point when unpaused")
                         break
+                    if get_generation(conn) != batch_generation:
+                        # Purge Queue was clicked while this batch was
+                        # running: the rows for the files below were
+                        # just deleted, so stop immediately instead of
+                        # continuing to silently re-insert them - the
+                        # next cycle will re-discover whatever's still
+                        # actually on disk and start a fresh batch.
+                        logger.info("Queue purged mid-batch - stopping current batch early")
+                        purged_mid_batch = True
+                        break
                     update_scan_status(
                         conn, total=total,
-                        processed=batch_start_processed + i,
+                        processed=processed_count,
                         current_file=str(f)
                     )
                     try:
@@ -501,8 +546,13 @@ def scan_loop(poll_seconds=15):
                             conn.commit()
                         except Exception as db_err:
                             logger.error(f"Failed logging error: {db_err}")
+                    processed_count += 1
 
-                update_scan_status(conn, total=total, processed=total, current_file=None)
+                if not purged_mid_batch:
+                    # processed_count (not `total`) so a pause-interrupted
+                    # batch correctly reports partial progress instead of
+                    # falsely claiming the whole batch finished.
+                    update_scan_status(conn, total=total, processed=processed_count, current_file=None)
 
             except Exception as e:
                 logger.error(f"Global loop failure: {e}")

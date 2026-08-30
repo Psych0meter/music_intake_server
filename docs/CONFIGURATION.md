@@ -125,6 +125,31 @@ file on disk, which changes its mtime and triggers automatic reprocessing.
 > full reprocessing pass of your library after updating - that's
 > expected and self-corrects; it will not loop again afterward.
 
+## Progress bar, ETA and Purge Queue
+
+The scanning progress bar/percentage and ETA in the review UI describe
+the **current batch** of new/changed files being (re)processed, not your
+whole library - once a file is queued and unchanged, it doesn't count
+against "total" again, so the percentage reflects real remaining work
+instead of being dominated by files that were already scanned long ago.
+The ETA is a simple `files processed so far in this batch / time elapsed
+since this batch started` rate projection - it firms up (and gets more
+accurate) a few files into a batch, and it's inherently rough right at
+the very start of a batch or right after a Pause/Resume.
+
+**Purge Queue** deletes every row with `status = 'pending'` and stops any
+scan batch that's currently running so it doesn't keep re-inserting the
+rows that were just deleted (previously, purging mid-scan looked like it
+"didn't clean everything," because the scan pass already in progress had
+its list of files to process fixed in memory before the purge happened,
+and kept writing them back regardless). Purge does **not** remove or
+exclude the underlying files from `scan_roots.txt` - if they're still
+there, the next poll cycle (within ~15s) will legitimately rediscover
+and re-queue them, same as it would for any new file. That's expected,
+not a bug: to keep specific files out of the queue for good, actually
+Approve/Reject them (moves the file out of the scanned folder) or remove
+their path from `scan_roots.txt`.
+
 ## AcoustID budget note
 
 AcoustID has no hard request cap for reasonable personal use, but avoid

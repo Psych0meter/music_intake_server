@@ -639,7 +639,14 @@ def purge_queue():
     conn = get_db()
     try:
         conn.execute("DELETE FROM queue WHERE status = 'pending'")
-        conn.execute("UPDATE scan_status SET total = 0, processed = 0, current_file = NULL, is_paused = 0 WHERE id = 1")
+        # generation is bumped so a scan pass already running (with its
+        # batch of files already computed in memory) notices the queue
+        # was just cleared and stops instead of quietly re-inserting the
+        # very rows this just deleted a moment later.
+        conn.execute(
+            "UPDATE scan_status SET total = 0, processed = 0, current_file = NULL, "
+            "is_paused = 0, generation = COALESCE(generation, 0) + 1 WHERE id = 1"
+        )
         conn.commit()
         return jsonify({"status": "purged"})
     except Exception as e:
