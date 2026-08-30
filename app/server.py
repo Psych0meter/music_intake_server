@@ -405,10 +405,15 @@ def history():
 @app.route("/logs")
 def view_logs():
     log_dir = Path("/opt/music-intake/logs")
+    # Keys here double as the `name` passed to /api/clear-log/<name> and
+    # /api/download-log/<name> (see logs.html) - they must match
+    # KNOWN_LOG_NAMES below and the actual "<name>.log" filename. This
+    # used to be 'beets' here vs 'beets-import' everywhere else, so
+    # Clear/Download always 404'd ("unknown log") for the beets log only.
     log_files = {
         'recognize': log_dir / 'recognize.log',
         'web': log_dir / 'web.log',
-        'beets': log_dir / 'beets-import.log'
+        'beets-import': log_dir / 'beets-import.log'
     }
 
     logs = {}
