@@ -31,6 +31,24 @@
     @media (max-width: 767px) {
       .mobile-hide { display: none !important; }
     }
+
+    /* Per-field detector-value picker chips (Title/Artist/Album) */
+    .detector-chip {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background-color: #f1f5f9;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .detector-chip:hover {
+      background-color: #eef2ff;
+      color: #4338ca;
+      border-color: #c7d2fe;
+    }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-800" id="body-container">
@@ -168,6 +186,7 @@
               <td class="px-4 py-4 align-top text-sm col-songrec" data-val="{{ row.sr_artist or '' }}">
                 <span class="block text-gray-900 break-words max-w-[120px]">{{ row.sr_artist or '-' }}</span>
                 <span class="block text-gray-500 break-words max-w-[120px]">{{ row.sr_title or '-' }}</span>
+                <span class="block text-gray-400 break-words max-w-[120px] text-xs mt-0.5">{{ row.sr_album or '' }}</span>
               </td>
               {% endif %}
               {% if detectors_enabled.acoustid %}
@@ -186,14 +205,27 @@
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
                 <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
                   class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+                <div class="flex flex-wrap gap-1 mt-1 px-2">
+                  {% if detectors_enabled.songrec and row.sr_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="false" title="Use SongRec's title">SR: {{ row.sr_title|truncate(16) }}</button>{% endif %}
+                  {% if detectors_enabled.acoustid and row.ac_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="false" title="Use AcoustID's title">AC: {{ row.ac_title|truncate(16) }}</button>{% endif %}
+                  {% if detectors_enabled.genius and row.gn_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="false" title="Use Genius's title">GN: {{ row.gn_title|truncate(16) }}</button>{% endif %}
+                </div>
               </td>
               <td class="px-4 py-4 align-top col-artist" data-val="{{ row.artist or '' }}">
                 <input type="text" id="artist-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Unknown Artist" {{ 'disabled' if row.error }}
                   class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+                <div class="flex flex-wrap gap-1 mt-1 px-2">
+                  {% if detectors_enabled.songrec and row.sr_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="false" title="Use SongRec's artist">SR: {{ row.sr_artist|truncate(16) }}</button>{% endif %}
+                  {% if detectors_enabled.acoustid and row.ac_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="false" title="Use AcoustID's artist">AC: {{ row.ac_artist|truncate(16) }}</button>{% endif %}
+                  {% if detectors_enabled.genius and row.gn_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="false" title="Use Genius's artist">GN: {{ row.gn_artist|truncate(16) }}</button>{% endif %}
+                </div>
               </td>
               <td class="px-4 py-4 align-top col-album" data-val="{{ row.album or '' }}">
                 <input type="text" id="album-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Unknown Album" {{ 'disabled' if row.error }}
                   class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40 text-gray-600">
+                <div class="flex flex-wrap gap-1 mt-1 px-2">
+                  {% if detectors_enabled.songrec and row.sr_album %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="false" title="Use SongRec's album">SR: {{ row.sr_album|truncate(16) }}</button>{% endif %}
+                </div>
               </td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-size" data-val="{{ row.filesize or 0 }}">{{ row.size_human }}</td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-length" data-val="{{ row.duration or 0 }}">{{ row.duration_human }}</td>
@@ -279,9 +311,28 @@
         {% endif %}
 
         <div class="space-y-2 mb-3">
-          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
-          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
-          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+          <div>
+            <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+            <div class="flex flex-wrap gap-1 mt-1">
+              {% if detectors_enabled.songrec and row.sr_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="true" title="Use SongRec's title">SR: {{ row.sr_title|truncate(16) }}</button>{% endif %}
+              {% if detectors_enabled.acoustid and row.ac_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="true" title="Use AcoustID's title">AC: {{ row.ac_title|truncate(16) }}</button>{% endif %}
+              {% if detectors_enabled.genius and row.gn_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="true" title="Use Genius's title">GN: {{ row.gn_title|truncate(16) }}</button>{% endif %}
+            </div>
+          </div>
+          <div>
+            <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+            <div class="flex flex-wrap gap-1 mt-1">
+              {% if detectors_enabled.songrec and row.sr_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="true" title="Use SongRec's artist">SR: {{ row.sr_artist|truncate(16) }}</button>{% endif %}
+              {% if detectors_enabled.acoustid and row.ac_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="true" title="Use AcoustID's artist">AC: {{ row.ac_artist|truncate(16) }}</button>{% endif %}
+              {% if detectors_enabled.genius and row.gn_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="true" title="Use Genius's artist">GN: {{ row.gn_artist|truncate(16) }}</button>{% endif %}
+            </div>
+          </div>
+          <div>
+            <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
+            <div class="flex flex-wrap gap-1 mt-1">
+              {% if detectors_enabled.songrec and row.sr_album %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="true" title="Use SongRec's album">SR: {{ row.sr_album|truncate(16) }}</button>{% endif %}
+            </div>
+          </div>
         </div>
 
         {% set enabled_detector_count = detectors_enabled.songrec|int + detectors_enabled.acoustid|int + detectors_enabled.genius|int %}
@@ -292,6 +343,7 @@
             <p class="text-gray-400 mb-1">SongRec</p>
             <p class="font-medium">{{ row.sr_artist or '-' }}</p>
             <p class="text-gray-500 truncate">{{ row.sr_title or '-' }}</p>
+            <p class="text-gray-400 truncate text-[11px]">{{ row.sr_album or '' }}</p>
           </div>
           {% endif %}
           {% if detectors_enabled.acoustid %}
@@ -502,6 +554,32 @@
 
     // Initialize column toggle on page load
     document.addEventListener('DOMContentLoaded', initColumnToggle);
+
+    // Per-field detector-value picker: clicking a chip (e.g. "SR: Some Title")
+    // copies that detector's raw value into the corresponding editable
+    // input, without saving anything - Approve/the normal save flow still
+    // reads whatever ends up in the input, same as typing it by hand.
+    function applyDetectorValue(rowId, field, value, isMobile) {
+      const inputId = isMobile ? `${field}-m-${rowId}` : `${field}-${rowId}`;
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      input.value = value;
+      input.focus();
+    }
+
+    function initDetectorChips() {
+      document.querySelectorAll('.detector-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          applyDetectorValue(
+            parseInt(btn.dataset.rowId, 10),
+            btn.dataset.field,
+            btn.dataset.value,
+            btn.dataset.mobile === 'true'
+          );
+        });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initDetectorChips);
 
     function syncCheckboxStates() {
       document.querySelectorAll('.row-checkbox').forEach(cb => {
