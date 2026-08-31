@@ -217,6 +217,17 @@ def index():
     per_page = min(max(per_page, 1), 500)
 
     conn = get_db()
+
+    # Which detector columns to show and offer in the "Columns" dropdown -
+    # a disabled detector's column disappears server-side (it has nothing
+    # to show for any newly-scanned file), not just client-side hidden.
+    settings_values = get_settings(conn)
+    detectors_enabled = {
+        "songrec": settings_values["songrec_enabled"],
+        "acoustid": settings_values["acoustid_enabled"],
+        "genius": settings_values["genius_enabled"],
+    }
+
     query_conditions = ["status = 'pending'"]
     query_params = []
 
@@ -331,6 +342,7 @@ def index():
         show_duplicates=show_duplicates,
         sort_by=sort_by,
         order=order,
+        detectors_enabled=detectors_enabled,
     )
 
 @app.route("/history")

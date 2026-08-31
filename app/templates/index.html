@@ -113,9 +113,9 @@
               </th>
               <th class="px-4 py-4 col-source {% if sort_by == 'source' %}{{ order }}{% endif %}" data-sort-key="source" onclick="handleSortClick(this)">Source File / Path</th>
               <th class="px-4 py-4 col-preview">Preview</th>
-              <th class="px-4 py-4 col-songrec {% if sort_by == 'songrec' %}{{ order }}{% endif %}" data-sort-key="songrec" onclick="handleSortClick(this)">SongRec</th>
-              <th class="px-4 py-4 col-acoustid {% if sort_by == 'acoustid' %}{{ order }}{% endif %}" data-sort-key="acoustid" onclick="handleSortClick(this)">AcoustID</th>
-              <th class="px-4 py-4 col-genius {% if sort_by == 'genius' %}{{ order }}{% endif %}" data-sort-key="genius" onclick="handleSortClick(this)">Genius</th>
+              {% if detectors_enabled.songrec %}<th class="px-4 py-4 col-songrec {% if sort_by == 'songrec' %}{{ order }}{% endif %}" data-sort-key="songrec" onclick="handleSortClick(this)">SongRec</th>{% endif %}
+              {% if detectors_enabled.acoustid %}<th class="px-4 py-4 col-acoustid {% if sort_by == 'acoustid' %}{{ order }}{% endif %}" data-sort-key="acoustid" onclick="handleSortClick(this)">AcoustID</th>{% endif %}
+              {% if detectors_enabled.genius %}<th class="px-4 py-4 col-genius {% if sort_by == 'genius' %}{{ order }}{% endif %}" data-sort-key="genius" onclick="handleSortClick(this)">Genius</th>{% endif %}
               <th class="px-4 py-4 col-title {% if sort_by == 'title' %}{{ order }}{% endif %}" data-sort-key="title" onclick="handleSortClick(this)">Track Title</th>
               <th class="px-4 py-4 col-artist {% if sort_by == 'artist' %}{{ order }}{% endif %}" data-sort-key="artist" onclick="handleSortClick(this)">Artist</th>
               <th class="px-4 py-4 col-album {% if sort_by == 'album' %}{{ order }}{% endif %}" data-sort-key="album" onclick="handleSortClick(this)">Album</th>
@@ -164,19 +164,25 @@
                   </audio>
                 {% endif %}
               </td>
+              {% if detectors_enabled.songrec %}
               <td class="px-4 py-4 align-top text-sm col-songrec" data-val="{{ row.sr_artist or '' }}">
                 <span class="block text-gray-900 break-words max-w-[120px]">{{ row.sr_artist or '-' }}</span>
                 <span class="block text-gray-500 break-words max-w-[120px]">{{ row.sr_title or '-' }}</span>
               </td>
+              {% endif %}
+              {% if detectors_enabled.acoustid %}
               <td class="px-4 py-4 align-top text-sm col-acoustid" data-val="{{ row.ac_artist or '' }}">
                 <span class="block text-gray-900 break-words max-w-[120px]">{{ row.ac_artist or '-' }}</span>
                 <span class="block text-gray-500 break-words max-w-[120px]">{{ row.ac_title or '-' }}</span>
                 <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">{{ row.ac_score_human }}</span>
               </td>
+              {% endif %}
+              {% if detectors_enabled.genius %}
               <td class="px-4 py-4 align-top text-sm col-genius" data-val="{{ row.gn_artist or '' }}">
                 <span class="block text-gray-900 break-words max-w-[120px]">{{ row.gn_artist or '-' }}</span>
                 <span class="block text-gray-500 break-words max-w-[120px]">{{ row.gn_title or '-' }}</span>
               </td>
+              {% endif %}
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
                 <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
                   class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
@@ -278,24 +284,33 @@
           <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
         </div>
 
-        <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+        {% set enabled_detector_count = detectors_enabled.songrec|int + detectors_enabled.acoustid|int + detectors_enabled.genius|int %}
+        {% if enabled_detector_count > 0 %}
+        <div class="grid grid-cols-{{ enabled_detector_count }} gap-2 text-xs mb-3">
+          {% if detectors_enabled.songrec %}
           <div class="text-center">
             <p class="text-gray-400 mb-1">SongRec</p>
             <p class="font-medium">{{ row.sr_artist or '-' }}</p>
             <p class="text-gray-500 truncate">{{ row.sr_title or '-' }}</p>
           </div>
+          {% endif %}
+          {% if detectors_enabled.acoustid %}
           <div class="text-center">
             <p class="text-gray-400 mb-1">AcoustID</p>
             <p class="font-medium">{{ row.ac_artist or '-' }}</p>
             <p class="text-gray-500 truncate">{{ row.ac_title or '-' }}</p>
             <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">{{ row.ac_score_human }}</span>
           </div>
+          {% endif %}
+          {% if detectors_enabled.genius %}
           <div class="text-center">
             <p class="text-gray-400 mb-1">Genius</p>
             <p class="font-medium">{{ row.gn_artist or '-' }}</p>
             <p class="text-gray-500 truncate">{{ row.gn_title or '-' }}</p>
           </div>
+          {% endif %}
         </div>
+        {% endif %}
 
         <div class="flex flex-wrap gap-2">
           <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-1.5 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30">Approve</button>
@@ -358,10 +373,15 @@
     let scanStartTime = null;
     let currentModalId = null;
 
-    // Column visibility management
+    // Column visibility management. Detector columns the server already
+    // omitted (disabled on the Settings page) aren't offered here either -
+    // no point toggling a column that isn't in the DOM.
     const columnClasses = [
-      'col-select', 'col-source', 'col-preview', 'col-songrec', 'col-acoustid',
-      'col-genius', 'col-title', 'col-artist', 'col-album', 'col-size',
+      'col-select', 'col-source', 'col-preview',
+      {% if detectors_enabled.songrec %}'col-songrec',{% endif %}
+      {% if detectors_enabled.acoustid %}'col-acoustid',{% endif %}
+      {% if detectors_enabled.genius %}'col-genius',{% endif %}
+      'col-title', 'col-artist', 'col-album', 'col-size',
       'col-length', 'col-confidence', 'col-actions'
     ];
 
