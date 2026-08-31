@@ -26,6 +26,9 @@
     .chip-slot-empty { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: var(--inkfaint); }
     .score-slot { margin-top: 5px; min-height: 15px; display: flex; align-items: center; gap: 5px; }
     .score-slot .score-value { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; }
+    .score-value.score-good { color: var(--successstrong); }
+    .score-value.score-mid { color: var(--warningstrong); }
+    .score-value.score-bad { color: var(--criticalstrong); }
 
     .detector-chip {
       display: inline-flex;
@@ -238,7 +241,7 @@
                   </div>
                   <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
                 </div>
-                <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
+                <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score %}<span class="score-value {{ 'score-good' if row.ac_score >= 0.8 else ('score-mid' if row.ac_score >= 0.4 else 'score-bad') }}">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
               </td>
               {% endif %}
               {% if detectors_enabled.genius %}
@@ -384,7 +387,7 @@
               </div>
               <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
             </div>
-            <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
+            <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score %}<span class="score-value {{ 'score-good' if row.ac_score >= 0.8 else ('score-mid' if row.ac_score >= 0.4 else 'score-bad') }}">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
           </div>
           {% endif %}
           {% if detectors_enabled.genius %}
