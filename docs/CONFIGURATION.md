@@ -19,18 +19,79 @@ ACOUSTID_API_KEY=       # required - free at https://acoustid.org/my-application
 GENIUS_ACCESS_TOKEN=    # optional - only for the lyrics fallback, see below
 ```
 
-Restart the daemon after editing:
+**As of the Settings page (see below), this file is a one-time bootstrap
+only.** `migrate.py` seeds a `settings` table in the database with safe
+generic defaults (not your actual keys - see the comment at the top of
+`migrations/0011_add_settings.sql` for why) the first time it runs
+migration `0011_add_settings`. From that point on, the database - not
+this file - is what both `music-recognize.service` and
+`music-review-ui.service` actually read for every value listed in
+"Settings (Settings page)" below. Editing `secrets.env` and restarting
+`music-recognize.service` after that point has **no effect** on those
+values; use the Settings page instead. This also fixes a pre-existing
+asymmetry: `secrets.env` was only ever wired up as `EnvironmentFile=`
+for `music-recognize.service`, not `music-review-ui.service` - the
+review UI process never actually saw these values at all before now.
+
+`secrets.env` still matters for the handful of things that must exist
+before the database is even reachable (`MUSIC_DB_PATH` if you override
+it) - just not for the detector toggles/keys/Whisper/SCAN_WORKERS
+values, which move to the Settings page permanently once migrated.
+
+> **Upgrading an existing install? Do this once, right after
+> migrating.** The database seeds with `acoustid_api_key` and
+> `genius_access_token` both *empty* - it does not copy whatever's
+> currently in your `secrets.env` (see `migrations/0011_add_settings.sql`
+> for why). If you already had `ACOUSTID_API_KEY` set, AcoustID lookups
+> will silently stop matching (logged, not crash) the moment
+> `music-recognize.service` restarts onto the new code, until you paste
+> the key into the Settings page. `songrec_enabled`/`acoustid_enabled`
+> both default to on, so nothing needs re-enabling there - just the key
+> itself, and `genius_access_token` too if you use the Whisper fallback.
+
+Restart the daemon after editing (only relevant to the values still
+read from this file):
 ```bash
 systemctl restart music-recognize.service
 ```
+
+## Settings (Settings page)
+
+`/settings` in the web UI - enable/disable each detector (SongRec,
+AcoustID, Genius+Whisper), edit `ACOUSTID_API_KEY`/`GENIUS_ACCESS_TOKEN`,
+tune the Whisper model settings, and set `SCAN_WORKERS`, all without
+touching a file or restarting a service. Changes take effect for the
+recognition daemon's *next scan cycle* (it re-reads settings once per
+cycle, not mid-cycle - see "Identification pipeline in detail" below).
+
+Disabling a detector removes its column from the review table (both
+desktop and mobile) going forward, since there's nothing for it to show.
+Two consequences worth knowing before you flip a toggle:
+
+- **Disabling SongRec** means `sr_album` is never populated again -
+  SongRec is currently the only detector whose album guess is reliable
+  enough to be useful, so turning it off measurably reduces how often
+  Album gets filled in automatically.
+- **Enabling Genius/Whisper** is CPU-heavy, but only *when it actually
+  runs* - i.e. only on files where SongRec and AcoustID both found
+  nothing (see the pipeline table below). It's not a per-file cost paid
+  regardless of whether it's needed.
+
+API keys are masked in the Settings page after saving (shown as
+"set" rather than echoed back in full) - re-enter a key to change it,
+leave it alone to keep the current value.
 
 ## Identification pipeline in detail
 
 | Step | Source | Cost | Fires when |
 |---|---|---|---|
-| 1 | SongRec (Shazam) + AcoustID/MusicBrainz | Free, unlimited | Every file |
+| 1 | SongRec (Shazam) + AcoustID/MusicBrainz | Free, unlimited | Every file, if enabled on the Settings page (each independently) |
 | 2 | iTunes Search (catalog verification, not fingerprinting) | Free, no key | SongRec and AcoustID disagree |
-| 3 | Local Whisper transcription + Genius lyrics search | Free, but CPU-heavy | Both of the above found *nothing at all* |
+| 3 | Local Whisper transcription + Genius lyrics search | Free, but CPU-heavy | Enabled on the Settings page, AND both of the above found *nothing at all* |
+
+Disabling SongRec or AcoustID on the Settings page skips that call
+entirely for every file (not just hiding its column afterward) - the
+identification pipeline itself adapts, not just the review table.
 
 > **Fixed bug (previously made the Whisper fallback run on every file
 > instead of only true dead ends):** step 3 was gated purely on whether
@@ -53,19 +114,24 @@ sudo -u musicintake bash -c '
 '
 ```
 
-Then set `GENIUS_ACCESS_TOKEN` in `secrets.env` and restart the daemon.
-Leaving the token unset disables the fallback automatically — no code
-changes needed either way.
+Then enable "Genius / Whisper" and enter your `GENIUS_ACCESS_TOKEN` on
+the Settings page - no restart needed, picked up at the start of the
+next scan cycle. Leaving it disabled skips the fallback entirely, same
+as before.
 
 ### Tuning Whisper (if enabled)
 
-Environment variables in `secrets.env`:
+Model size/device/compute type are also on the Settings page:
 
 ```
 WHISPER_MODEL_SIZE=small     # tiny|base|small|medium|large - bigger = more accurate, slower
 WHISPER_DEVICE=cpu           # or "cuda" if this LXC has GPU passthrough
 WHISPER_COMPUTE_TYPE=int8    # int8 is fastest on CPU
 ```
+
+(shown here as the equivalent `secrets.env` names for anyone matching
+this doc against the database column names in `settings` -
+`whisper_model_size`/`whisper_device`/`whisper_compute_type`.)
 
 ## Speeding up a large scan (SCAN_WORKERS)
 
@@ -77,14 +143,11 @@ work - it's the difference between a 2000-track library taking most of a
 day (one file fully done, start to finish, before the next begins) and
 taking a couple of hours.
 
-Defaults to `min(8, cpu_count)`. Override in `config/secrets.env`:
-
-```
-SCAN_WORKERS=8
-```
-
-then `systemctl restart music-recognize.service`. Things to weigh when
-tuning it:
+Defaults to `min(8, cpu_count)` (a Settings-page value of `0`/auto means
+this default). Set it on the Settings page - it's picked up at the start
+of the daemon's next scan cycle, no restart needed. (`config/secrets.env`'s
+`SCAN_WORKERS=` is no longer read at all once migrated - see "Settings
+(Settings page)" above.) Things to weigh when tuning it:
 
 - **Raise it** if you have spare cores, a fast connection to your NAS
   source, and a big backlog to get through - the identification calls
