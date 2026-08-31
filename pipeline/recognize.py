@@ -35,19 +35,50 @@ import acoustid
 import mutagen
 import requests
 
+from settings import get_settings
+
 socket.setdefaulttimeout(15)
 
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
 DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
+
+# These five are now FALLBACK/DEV defaults only, read once at import time.
+# The live values used by scan_loop() come from the `settings` table
+# (settings.get_settings(), re-read once per scan cycle - see
+# docs/CONFIGURATION.md's "Settings (Settings page)" section) so they can
+# be changed from the web UI without a restart. These module constants
+# still matter for two things: seeding identify_and_tag()/process_file()
+# when called with no explicit `settings` dict (scripts/dev-test-track.sh),
+# and as the values scripts/dev-test-track.sh reads directly off this
+# module for its own preflight checks.
 ACOUSTID_API_KEY = os.environ.get("ACOUSTID_API_KEY")
 GENIUS_ACCESS_TOKEN = os.environ.get("GENIUS_ACCESS_TOKEN")
 WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 _whisper_model = None
+_whisper_model_key = None  # (model_size, device, compute_type) the cached model was loaded with
 _whisper_lock = threading.Lock()
 SUPPORTED_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".wav"}
+
+def _default_settings():
+    # Fallback settings dict built from the module-level env-derived
+    # constants above, used when identify_and_tag()/process_file() are
+    # called with no explicit `settings` argument - i.e. any caller that
+    # is not scan_loop() (which always reads real settings from the
+    # database), such as scripts/dev-test-track.sh's direct process_file()
+    # call against a scratch DB with no `settings` table.
+    return {
+        "songrec_enabled": True,
+        "acoustid_enabled": True,
+        "acoustid_api_key": ACOUSTID_API_KEY,
+        "genius_enabled": bool(GENIUS_ACCESS_TOKEN),
+        "genius_access_token": GENIUS_ACCESS_TOKEN,
+        "whisper_model_size": WHISPER_MODEL_SIZE,
+        "whisper_device": WHISPER_DEVICE,
+        "whisper_compute_type": WHISPER_COMPUTE_TYPE,
+    }
 
 # How many files to identify concurrently. Nearly all of the per-file cost
 # (SongRec subprocess, AcoustID/iTunes/Genius HTTP round-trips) is I/O wait,
@@ -58,13 +89,18 @@ SUPPORTED_EXT = {".mp3", ".flac", ".m4a", ".ogg", ".wav"}
 # SCAN_WORKERS in config/secrets.env.
 SCAN_WORKERS = max(1, int(os.environ.get("SCAN_WORKERS", str(min(8, os.cpu_count() or 4)))))
 
-# Shared connection-pooled session for the iTunes/Genius HTTP calls, sized
-# for SCAN_WORKERS concurrent requests instead of opening a fresh
-# connection per call. requests.Session is safe to share across threads.
+# Shared connection-pooled session for the iTunes/Genius HTTP calls,
+# instead of opening a fresh connection per call. requests.Session is
+# safe to share across threads. Sized generously rather than tied to
+# SCAN_WORKERS: the worker count used by any given scan cycle can now
+# come from the Settings page and change without a restart, so this
+# just needs to comfortably cover realistic settings-driven values -
+# going over pool_maxsize doesn't break anything, it just means some
+# connections aren't reused.
 _http_session = requests.Session()
 _http_session.mount(
     "https://",
-    requests.adapters.HTTPAdapter(pool_maxsize=max(10, SCAN_WORKERS))
+    requests.adapters.HTTPAdapter(pool_maxsize=max(32, SCAN_WORKERS))
 )
 
 # --- Logging Setup ---
@@ -227,12 +263,13 @@ def songrec_identify(filepath):
         logger.error(f"SongRec failed for {filepath}: {e}")
         return None, None, None
 
-def acoustid_lookup(filepath):
-    if not ACOUSTID_API_KEY:
+def acoustid_lookup(filepath, api_key=None):
+    api_key = api_key if api_key is not None else ACOUSTID_API_KEY
+    if not api_key:
         logger.warning("ACOUSTID_API_KEY is not set - skipping lookup")
         return None, None, 0.0
     try:
-        results = acoustid.match(ACOUSTID_API_KEY, str(filepath))
+        results = acoustid.match(api_key, str(filepath))
         for score, rid, title, artist in results:
             return artist, title, score
     except acoustid.NoBackendError:
@@ -269,14 +306,24 @@ def itunes_verify(artist, title):
         logger.error(f"iTunes verify failed for {artist} - {title}: {e}")
         return False
 
-def get_whisper_model():
-    global _whisper_model
-    if _whisper_model is None:
+def get_whisper_model(model_size=None, device=None, compute_type=None):
+    """Loads (and caches) the Whisper model for the given config. Reloads
+    if called with a different (model_size, device, compute_type) than
+    whatever's currently cached - relevant because these can now change
+    from the Settings page between scan cycles without a process
+    restart, unlike when they were fixed at import time."""
+    global _whisper_model, _whisper_model_key
+    model_size = model_size or WHISPER_MODEL_SIZE
+    device = device or WHISPER_DEVICE
+    compute_type = compute_type or WHISPER_COMPUTE_TYPE
+    key = (model_size, device, compute_type)
+    if _whisper_model is None or _whisper_model_key != key:
         with _whisper_lock:
-            if _whisper_model is None:
+            if _whisper_model is None or _whisper_model_key != key:
                 from faster_whisper import WhisperModel
-                logger.info(f"Loading Whisper model: {WHISPER_MODEL_SIZE} on {WHISPER_DEVICE} ({WHISPER_COMPUTE_TYPE})")
-                _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
+                logger.info(f"Loading Whisper model: {model_size} on {device} ({compute_type})")
+                _whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+                _whisper_model_key = key
                 logger.info("Whisper model loaded successfully")
     return _whisper_model
 
@@ -290,7 +337,7 @@ def get_sample_windows(duration, window=20, count=3):
         windows.append((offset, window))
     return windows
 
-def transcribe_clip(filepath, offset, duration):
+def transcribe_clip(filepath, offset, duration, model_size=None, device=None, compute_type=None):
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             subprocess.run(
@@ -298,7 +345,7 @@ def transcribe_clip(filepath, offset, duration):
                  "-i", str(filepath), "-ar", "16000", "-ac", "1", tmp.name],
                 capture_output=True, timeout=60, check=True
             )
-            segments, _ = get_whisper_model().transcribe(
+            segments, _ = get_whisper_model(model_size, device, compute_type).transcribe(
                 tmp.name,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 500},
@@ -314,25 +361,27 @@ def transcribe_clip(filepath, offset, duration):
         logger.error(f"Transcription failed for {filepath} at {offset}s: {e}")
         return ""
 
-def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15):
+def transcribe_track(filepath, duration, window=20, max_windows=3, min_words=15,
+                      model_size=None, device=None, compute_type=None):
     text_parts = []
     for offset, win in get_sample_windows(duration, window=window, count=max_windows):
-        snippet = transcribe_clip(filepath, offset, win)
+        snippet = transcribe_clip(filepath, offset, win, model_size, device, compute_type)
         if snippet:
             text_parts.append(snippet)
         if sum(len(p.split()) for p in text_parts) >= min_words:
             break
     return " ".join(text_parts).strip()
 
-def genius_lyrics_search(snippet):
-    if not GENIUS_ACCESS_TOKEN or not snippet:
+def genius_lyrics_search(snippet, access_token=None):
+    access_token = access_token if access_token is not None else GENIUS_ACCESS_TOKEN
+    if not access_token or not snippet:
         return None, None
     try:
         clean_query = " ".join(snippet.split()[:12])
         resp = _http_session.get(
             "https://api.genius.com/search",
             params={"q": clean_query, "type": "song"},
-            headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
+            headers={"Authorization": f"Bearer {access_token}"},
             timeout=15,
         )
         hits = resp.json().get("response", {}).get("hits", [])
@@ -347,11 +396,11 @@ def genius_lyrics_search(snippet):
         logger.error(f"Genius search failed: {e}")
         return None, None
 
-def lyrics_identify(filepath, duration):
-    text = transcribe_track(filepath, duration)
+def lyrics_identify(filepath, duration, access_token=None, model_size=None, device=None, compute_type=None):
+    text = transcribe_track(filepath, duration, model_size=model_size, device=device, compute_type=compute_type)
     if not text or len(text.split()) < 15:
         return None, None
-    return genius_lyrics_search(text)
+    return genius_lyrics_search(text, access_token=access_token)
 
 # --- Tag Writing ---
 def write_tags(filepath, artist, title, album=None):
@@ -402,32 +451,50 @@ def best_pair_match(candidates):
                 best = (avg, candidates[i], candidates[j])
     return best
 
-def identify_and_tag(filepath):
+def identify_and_tag(filepath, settings=None):
     """Runs the full identification pipeline for one file (SongRec,
     AcoustID, iTunes tie-break, optional Genius/Whisper fallback), writes
     the resulting tags in place, and returns the fields the caller should
     store in the queue row. Touches only `filepath` and the network -
     never the database or any other shared mutable state - so it's safe
-    to call from multiple worker threads at once (see scan_loop)."""
+    to call from multiple worker threads at once (see scan_loop).
+
+    `settings` is the dict returned by settings.get_settings() for the
+    current scan cycle. Defaults to _default_settings() (built from the
+    module-level env constants) when omitted, for callers outside
+    scan_loop() - see _default_settings()'s docstring."""
+    settings = settings or _default_settings()
     duration = probe_duration(filepath)
 
     logger.info(f"Processing: {filepath.name}")
-    sr_artist, sr_title, sr_album = songrec_identify(filepath)
-    ac_artist, ac_title, score = acoustid_lookup(filepath)
+
+    sr_artist = sr_title = sr_album = None
+    if settings.get("songrec_enabled", True):
+        sr_artist, sr_title, sr_album = songrec_identify(filepath)
+
+    ac_artist = ac_title = None
+    score = 0.0
+    if settings.get("acoustid_enabled", True):
+        ac_artist, ac_title, score = acoustid_lookup(filepath, settings.get("acoustid_api_key"))
+
     # Per docs/CONFIGURATION.md's own pipeline table, the Whisper/Genius
-    # fallback is supposed to fire only when "both of the above found
-    # nothing at all" - but this call was unconditional on GENIUS_ACCESS_
-    # TOKEN alone, so every file ran a full CPU-heavy Whisper
-    # transcription (up to three 20s clips) even when SongRec or AcoustID
-    # already had a confident match. With several files transcribing
-    # concurrently (SCAN_WORKERS), that's enough sustained CPU contention
-    # to make a whole scan dramatically slower than the identification
-    # calls alone would ever cause - now actually gated as documented.
-    gn_artist, gn_title = (
-        lyrics_identify(filepath, duration)
-        if GENIUS_ACCESS_TOKEN and not sr_artist and not ac_artist
-        else (None, None)
-    )
+    # fallback fires only when it's enabled on the Settings page AND both
+    # of the above found nothing at all - explicit gating on both the
+    # enabled flag and the miss, not just a truthy token, so a detector
+    # that's disabled-but-still-has-a-key-saved never silently keeps
+    # running (and so a genuine SongRec/AcoustID match never pays for a
+    # CPU-heavy Whisper transcription it doesn't need - several files
+    # transcribing at once, on every file, was enough sustained CPU
+    # contention to make a whole scan dramatically slower).
+    gn_artist = gn_title = None
+    if settings.get("genius_enabled") and not sr_artist and not ac_artist:
+        gn_artist, gn_title = lyrics_identify(
+            filepath, duration,
+            access_token=settings.get("genius_access_token"),
+            model_size=settings.get("whisper_model_size"),
+            device=settings.get("whisper_device"),
+            compute_type=settings.get("whisper_compute_type"),
+        )
 
     acoustid_confidence = round(score * 100, 1) if score else 0.0
 
@@ -529,14 +596,14 @@ def _write_queue_row(conn, filepath, result):
         f"{result['album'] or '?'} ({result['confidence']}%)"
     )
 
-def process_file(conn, filepath):
+def process_file(conn, filepath, settings=None):
     """Synchronous single-file entry point: identify, tag, and write the
     queue row, all on the caller's connection/thread. Used by
     scripts/dev-test-track.sh and anywhere else that wants one file done
     end-to-end. scan_loop() does NOT call this - it runs identify_and_tag()
     in a worker pool and writes rows back on the main thread instead, so
     multiple files can be identified concurrently (see SCAN_WORKERS)."""
-    result = identify_and_tag(filepath)
+    result = identify_and_tag(filepath, settings)
     _write_queue_row(conn, filepath, result)
 
 def scan_loop(poll_seconds=15):
@@ -547,7 +614,8 @@ def scan_loop(poll_seconds=15):
         "ON CONFLICT(id) DO NOTHING"
     )
     conn.commit()
-    logger.info(f"Scan loop starting (SCAN_WORKERS={SCAN_WORKERS})")
+    logger.info(f"Scan loop starting (SCAN_WORKERS default={SCAN_WORKERS}, "
+                f"overridden per-cycle by the Settings page's scan_workers if set)")
 
     try:
         while True:
@@ -580,6 +648,18 @@ def scan_loop(poll_seconds=15):
                 batch_generation = get_generation(conn)
                 update_scan_status(conn, total=total, processed=0, current_file=None, reset_start=True)
 
+                # Re-read settings once per cycle (not per-file): cheap,
+                # always correct, and a settings change made mid-cycle
+                # simply takes effect starting next cycle rather than
+                # needing any hot-reload machinery. scan_workers=0 means
+                # "auto" - fall back to the SCAN_WORKERS default computed
+                # from the environment at import time. Clamped to a sane
+                # range so a fat-fingered value in the Settings page
+                # can't spin up an unreasonable number of threads.
+                cycle_settings = get_settings(conn)
+                workers = cycle_settings.get("scan_workers") or SCAN_WORKERS
+                workers = max(1, min(workers, 64))
+
                 processed_count = 0
                 stopped_early = False
 
@@ -591,8 +671,14 @@ def scan_loop(poll_seconds=15):
                 # connections aren't safe to share across threads, and
                 # writes need to be serialized anyway.
                 if pending_files:
-                    pool = ThreadPoolExecutor(max_workers=SCAN_WORKERS)
-                    futures = {pool.submit(identify_and_tag, f): f for f in pending_files}
+                    logger.info(
+                        f"Scan cycle: {total} file(s) pending, workers={workers}, "
+                        f"songrec={cycle_settings['songrec_enabled']}, "
+                        f"acoustid={cycle_settings['acoustid_enabled']}, "
+                        f"genius={cycle_settings['genius_enabled']}"
+                    )
+                    pool = ThreadPoolExecutor(max_workers=workers)
+                    futures = {pool.submit(identify_and_tag, f, cycle_settings): f for f in pending_files}
                     try:
                         for future in as_completed(futures):
                             f = futures[future]
