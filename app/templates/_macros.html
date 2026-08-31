@@ -14,12 +14,12 @@
   </div>
   <div class="flex items-center gap-2">
     {% if not compact %}
-    <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">« First</button>
+    <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="btn btn-secondary btn-sm">« First</button>
     {% endif %}
-    <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">‹ Prev</button>
-    <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">Next ›</button>
+    <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="btn btn-secondary btn-sm">‹ Prev</button>
+    <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="btn btn-secondary btn-sm">Next ›</button>
     {% if not compact %}
-    <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">Last »</button>
+    <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="btn btn-secondary btn-sm">Last »</button>
     {% endif %}
   </div>
 </div>

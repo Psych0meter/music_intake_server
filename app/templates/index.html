@@ -15,10 +15,6 @@
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
 
-    /* Mobile column fix */
-    @media (max-width: 767px) {
-      .mobile-hide { display: none !important; }
-    }
 
     /* Per-field detector-value picker chips (Title/Artist/Album), grouped
        into a fixed Title/Artist/Album stack per detector column so the
@@ -88,6 +84,33 @@
     }
     .badge-warning { background: var(--warningsoft); color: var(--warningstrong); }
     .badge-critical { background: var(--criticalsoft); color: var(--criticalstrong); }
+
+    /* Editable Title/Artist/Album fields - transparent until hovered/focused,
+       matching the approved mockup's .field-input treatment. */
+    .field-input {
+      width: 100%;
+      min-width: 120px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      padding: 5px 7px;
+      border-radius: 6px;
+      transition: background-color .12s ease, border-color .12s ease;
+    }
+    .field-input:hover { background: var(--surfacealt); }
+    .field-input:focus {
+      outline: none;
+      background: var(--surface);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accentsoft);
+    }
+    .field-input:disabled { opacity: 0.4; }
+
+    .audio-preview { width: 140px; height: 30px; }
+    .audio-preview-wide { width: 100%; height: 32px; margin-top: 8px; }
 {% endblock %}
 
 {% block content %}
@@ -97,28 +120,28 @@
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <div class="relative">
         <input type="text" id="text-filter" placeholder="Search & press Enter..." value="{{ search_query }}"
-               class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-64 px-3 py-2 shadow-sm">
+               class="field-control" style="width: 16rem;">
       </div>
-      <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt shadow-sm transition">
-        <input type="checkbox" id="toggle-unrecognized" class="rounded text-accent focus:ring-accent" {% if show_unrecognized %}checked{% endif %}>
+      <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt transition">
+        <input type="checkbox" id="toggle-unrecognized" {% if show_unrecognized %}checked{% endif %}>
         <span>Show Unrecognized</span>
       </label>
-      <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt shadow-sm transition">
-        <input type="checkbox" id="toggle-duplicates" class="rounded text-accent focus:ring-accent" {% if show_duplicates %}checked{% endif %}>
+      <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt transition">
+        <input type="checkbox" id="toggle-duplicates" {% if show_duplicates %}checked{% endif %}>
         <span>Show Duplicates Only</span>
       </label>
       <div class="relative inline-block text-left">
-        <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-line shadow-sm px-4 py-2 bg-surface text-sm font-medium text-ink hover:bg-surfacealt focus:outline-none">
+        <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="btn btn-secondary">
           Columns ▾
         </button>
         <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-surface ring-1 ring-black ring-opacity-5 z-20">
           <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
         </div>
       </div>
-      <button onclick="purgeDB()" class="text-critical hover:text-white hover:bg-critical border border-criticalsoft bg-surface rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
+      <button onclick="purgeDB()" class="btn btn-danger-ghost">
         Purge Queue
       </button>
-      <div class="bg-accentsoft text-accentstrong font-medium px-4 py-2 rounded-lg text-sm border border-accentsoft shadow-sm">
+      <div class="count-pill">
         Matching: <span class="font-bold" id="pending-count">{{ total_count }}</span>
       </div>
     </div>
@@ -126,11 +149,11 @@
     <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-accent text-white rounded-xl px-4 py-3 shadow-sm">
       <span class="text-sm font-medium"><span id="selected-count">0</span> selected on this page</span>
       <div class="flex items-center gap-2">
-        <button onclick="bulkAct('approve')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-success hover:bg-success">Approve Selected</button>
-        <button onclick="bulkAct('reject')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface text-ink hover:bg-surfacealt">Reject Selected</button>
-        <button onclick="bulkAct('rescan')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-warning hover:bg-warning">Rescan Selected</button>
-        <button onclick="bulkAct('delete')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-critical hover:bg-critical">Delete Selected</button>
-        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accentstrong hover:bg-accentstrong">Clear</button>
+        <button onclick="bulkAct('approve')" class="btn btn-on-accent btn-sm">Approve Selected</button>
+        <button onclick="bulkAct('reject')" class="btn btn-on-accent btn-sm">Reject Selected</button>
+        <button onclick="bulkAct('rescan')" class="btn btn-on-accent btn-sm">Rescan Selected</button>
+        <button onclick="bulkAct('delete')" class="btn btn-on-accent btn-sm">Delete Selected</button>
+        <button onclick="clearSelection()" class="btn btn-on-accent-strong btn-sm">Clear</button>
       </div>
     </div>
 
@@ -145,7 +168,7 @@
           <thead class="bg-surfacealt border-b border-line text-xs font-semibold uppercase tracking-wider text-inkmuted">
             <tr>
               <th class="px-4 py-4 col-select">
-                <input type="checkbox" id="select-all" class="rounded text-accent focus:ring-accent" onchange="toggleSelectAll(this.checked)">
+                <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
               </th>
               <th class="px-4 py-4 col-source {% if sort_by == 'source' %}{{ order }}{% endif %}" data-sort-key="source" onclick="handleSortClick(this)">Source File / Path</th>
               <th class="px-4 py-4 col-preview">Preview</th>
@@ -165,7 +188,7 @@
             {% for row in rows %}
             <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-surfacealt transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-criticalsoft hover:bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
               <td class="px-4 py-4 align-top col-select">
-                <input type="checkbox" class="row-checkbox rounded text-accent focus:ring-accent" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+                <input type="checkbox" class="row-checkbox" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
               <td class="px-4 py-4 align-top col-source" data-val="{{ row.relative_path|lower }}">
                 <span class="text-sm font-medium text-ink block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
@@ -199,7 +222,7 @@
                 {% if row.error %}
                   <span class="text-xs text-inkfaint italic">Unreadable</span>
                 {% else %}
-                  <audio controls preload="none" class="h-8 w-24 md:w-32">
+                  <audio controls preload="none" class="audio-preview">
                     <source src="{{ url_for('audio', item_id=row.id) }}">
                   </audio>
                 {% endif %}
@@ -250,15 +273,15 @@
               {% endif %}
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
                 <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+                  class="field-input">
               </td>
               <td class="px-4 py-4 align-top col-artist" data-val="{{ row.artist or '' }}">
                 <input type="text" id="artist-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Unknown Artist" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
+                  class="field-input">
               </td>
               <td class="px-4 py-4 align-top col-album" data-val="{{ row.album or '' }}">
                 <input type="text" id="album-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Unknown Album" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40 text-inkmuted">
+                  class="field-input" style="color: var(--inkmuted);">
               </td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-size" data-val="{{ row.filesize or 0 }}">{{ row.size_human }}</td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-length" data-val="{{ row.duration or 0 }}">{{ row.duration_human }}</td>
@@ -275,10 +298,10 @@
               </td>
               <td class="px-4 py-4 align-top text-right whitespace-nowrap text-sm col-actions" data-val="">
                 <div class="flex flex-col gap-2">
-                  <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm disabled:opacity-30 disabled:hover:bg-success">Approve</button>
-                  <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-line text-xs font-semibold rounded text-ink bg-surface hover:bg-surfacealt shadow-sm">Reject</button>
-                  <button onclick="act({{ row.id }}, 'rescan')" class="px-3 py-1 border border-warningsoft text-xs font-semibold rounded text-warningstrong bg-warningsoft hover:bg-warningsoft shadow-sm">Rescan</button>
-                  <button onclick="act({{ row.id }}, 'delete')" class="px-3 py-1 border border-criticalsoft text-criticalstrong bg-criticalsoft hover:bg-criticalsoft text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+                  <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="btn btn-success btn-xs btn-block">Approve</button>
+                  <button onclick="act({{ row.id }}, 'reject')" class="btn btn-secondary btn-xs btn-block">Reject</button>
+                  <button onclick="act({{ row.id }}, 'rescan')" class="btn btn-warning btn-xs btn-block">Rescan</button>
+                  <button onclick="act({{ row.id }}, 'delete')" class="btn btn-danger-ghost btn-xs btn-block">Delete</button>
                 </div>
               </td>
             </tr>
@@ -293,7 +316,7 @@
     <div class="flex items-center justify-end gap-2 mt-4 text-sm text-inkmuted">
       <label for="per-page-select" class="flex items-center gap-2">
         Rows per page
-        <select id="per-page-select" class="border border-line rounded-lg px-2 py-1 text-sm bg-surface text-ink focus:ring-2 focus:ring-accentsoft focus:border-accent">
+        <select id="per-page-select">
           <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
           <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
           <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
@@ -310,7 +333,7 @@
       <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-surface border border-line rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-criticalsoft bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex items-start gap-3 min-w-0">
-            <input type="checkbox" class="row-checkbox mt-1 rounded text-accent focus:ring-accent" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+            <input type="checkbox" class="row-checkbox mt-1" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
             <div class="min-w-0">
               <p class="text-sm font-medium text-ink break-words">{{ row.filepath.split('/')[-1] }}</p>
               <p class="text-[11px] text-inkfaint font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
@@ -348,13 +371,13 @@
             <strong>Read Error:</strong> {{ row.error }}
           </div>
         {% else %}
-          <audio controls preload="none" class="w-full h-8 mb-3"><source src="{{ url_for('audio', item_id=row.id) }}"></audio>
+          <audio controls preload="none" class="audio-preview-wide mb-3"><source src="{{ url_for('audio', item_id=row.id) }}"></audio>
         {% endif %}
 
         <div class="space-y-2 mb-3">
-          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
-          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
-          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
+          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="field-control">
+          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="field-control">
+          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="field-control">
         </div>
 
         {% set enabled_detector_count = detectors_enabled.songrec|int + detectors_enabled.acoustid|int + detectors_enabled.genius|int %}
@@ -409,10 +432,10 @@
         {% endif %}
 
         <div class="flex flex-wrap gap-2">
-          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-1.5 border border-transparent text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm disabled:opacity-30">Approve</button>
-          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-1.5 border border-line text-xs font-semibold rounded text-ink bg-surface hover:bg-surfacealt shadow-sm">Reject</button>
-          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-1.5 border border-warningsoft text-xs font-semibold rounded text-warningstrong bg-warningsoft hover:bg-warningsoft shadow-sm">Rescan</button>
-          <button onclick="act({{ row.id }}, 'delete', true)" class="flex-1 px-3 py-1.5 border border-criticalsoft text-criticalstrong bg-criticalsoft hover:bg-criticalsoft text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="btn btn-success btn-xs" style="flex: 1;">Approve</button>
+          <button onclick="act({{ row.id }}, 'reject', true)" class="btn btn-secondary btn-xs" style="flex: 1;">Reject</button>
+          <button onclick="act({{ row.id }}, 'rescan', true)" class="btn btn-warning btn-xs" style="flex: 1;">Rescan</button>
+          <button onclick="act({{ row.id }}, 'delete', true)" class="btn btn-danger-ghost btn-xs" style="flex: 1;">Delete</button>
         </div>
       </div>
       {% endfor %}
@@ -428,7 +451,7 @@
     <div class="bg-surface rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-ink">Duplicate Track Details</h2>
-        <button onclick="closeDuplicateModal()" class="text-inkfaint hover:text-inkmuted p-1 -mr-2">
+        <button onclick="closeDuplicateModal()" class="icon-btn" style="border: none;">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -443,7 +466,7 @@
     <div class="bg-surface rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-ink">Similar Tracks (Fuzzy Match)</h2>
-        <button onclick="closeFuzzyModal()" class="text-inkfaint hover:text-inkmuted p-1 -mr-2">
+        <button onclick="closeFuzzyModal()" class="icon-btn" style="border: none;">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -483,7 +506,7 @@
         const cb = document.createElement('label');
         cb.className = 'flex items-center gap-2 text-sm cursor-pointer';
         cb.innerHTML = `
-          <input type="checkbox" class="rounded text-accent focus:ring-accent column-toggle" 
+          <input type="checkbox" class="column-toggle" 
             value="${col}" ${checked ? 'checked' : ''}>
           <span>${label}</span>
         `;
@@ -888,13 +911,13 @@
 
         html += `
           <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-line">
-            <button onclick="deleteSelectedDuplicates()" class="px-4 py-2 bg-critical hover:bg-criticalstrong text-white rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="deleteSelectedDuplicates()" class="btn btn-danger">
               Delete Selected
             </button>
-            <button onclick="keepOnlySelected()" class="px-4 py-2 bg-accent hover:bg-accentstrong text-white rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="keepOnlySelected()" class="btn btn-primary">
               Keep Only Selected
             </button>
-            <button onclick="closeDuplicateModal()" class="px-4 py-2 bg-line hover:bg-line text-ink rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="closeDuplicateModal()" class="btn btn-secondary">
               Close
             </button>
           </div>
@@ -1041,9 +1064,9 @@
                     </div>
                     
                     <div class="flex gap-2 mt-3">
-                      <button onclick="act(${dup.id}, 'approve')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm">Approve</button>
-                      <button onclick="act(${dup.id}, 'reject')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-ink bg-surface border border-line hover:bg-surfacealt shadow-sm">Reject</button>
-                      <button onclick="act(${dup.id}, 'delete')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-criticalstrong bg-criticalsoft hover:bg-criticalsoft shadow-sm">Delete</button>
+                      <button onclick="act(${dup.id}, 'approve')" class="btn btn-success btn-xs" style="flex: 1;">Approve</button>
+                      <button onclick="act(${dup.id}, 'reject')" class="btn btn-secondary btn-xs" style="flex: 1;">Reject</button>
+                      <button onclick="act(${dup.id}, 'delete')" class="btn btn-danger-ghost btn-xs" style="flex: 1;">Delete</button>
                     </div>
                   </div>
                 </div>
@@ -1056,7 +1079,7 @@
 
         html += `
           <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-line">
-            <button onclick="closeFuzzyModal()" class="px-4 py-2 bg-line hover:bg-line text-ink rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="closeFuzzyModal()" class="btn btn-secondary">
               Close
             </button>
           </div>

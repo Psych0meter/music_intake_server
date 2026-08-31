@@ -9,15 +9,15 @@
 {% block content %}
     <div class="flex flex-wrap items-center gap-4 mb-6">
       <div class="flex gap-2">
-        <a href="/history?status=all" class="px-3 py-1 rounded-lg text-sm font-medium {% if status_filter == 'all' %}bg-accent text-white{% else %}bg-surface text-ink border border-line hover:bg-surfacealt{% endif %}">All</a>
-        <a href="/history?status=approved" class="px-3 py-1 rounded-lg text-sm font-medium {% if status_filter == 'approved' %}bg-accent text-white{% else %}bg-surface text-ink border border-line hover:bg-surfacealt{% endif %}">Approved</a>
-        <a href="/history?status=rejected" class="px-3 py-1 rounded-lg text-sm font-medium {% if status_filter == 'rejected' %}bg-accent text-white{% else %}bg-surface text-ink border border-line hover:bg-surfacealt{% endif %}">Rejected</a>
+        <a href="/history?status=all" class="btn btn-sm {{ 'btn-primary' if status_filter == 'all' else 'btn-secondary' }}">All</a>
+        <a href="/history?status=approved" class="btn btn-sm {{ 'btn-primary' if status_filter == 'approved' else 'btn-secondary' }}">Approved</a>
+        <a href="/history?status=rejected" class="btn btn-sm {{ 'btn-primary' if status_filter == 'rejected' else 'btn-secondary' }}">Rejected</a>
       </div>
       <div class="relative">
         <input type="text" id="text-filter" placeholder="Search history..." value="{{ search_query }}"
-               class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-64 px-3 py-2 shadow-sm">
+               class="field-control" style="width: 16rem;">
       </div>
-      <button onclick="exportHistory()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent text-white hover:bg-accentstrong shadow-sm">
+      <button onclick="exportHistory()" class="btn btn-primary btn-sm">
         Export CSV
       </button>
     </div>
@@ -26,10 +26,10 @@
     <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-accent text-white rounded-xl px-4 py-3 shadow-sm">
       <span class="text-sm font-medium"><span id="selected-count">0</span> selected</span>
       <div class="flex items-center gap-2">
-        <button onclick="bulkDeleteHistory()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-critical hover:bg-critical">
+        <button onclick="bulkDeleteHistory()" class="btn btn-danger btn-sm">
           Delete Selected
         </button>
-        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accentstrong hover:bg-accentstrong">
+        <button onclick="clearSelection()" class="btn btn-on-accent-strong btn-sm">
           Clear
         </button>
       </div>
@@ -41,7 +41,7 @@
           <thead class="bg-surfacealt border-b border-line text-xs font-semibold uppercase tracking-wider text-inkmuted">
             <tr>
               <th class="px-4 py-4 w-12">
-                <input type="checkbox" id="select-all" class="rounded text-accent focus:ring-accent" onchange="toggleSelectAll(this.checked)">
+                <input type="checkbox" id="select-all" onchange="toggleSelectAll(this.checked)">
               </th>
               <th class="px-4 py-4">Status</th>
               <th class="px-4 py-4">Track</th>
@@ -58,7 +58,7 @@
             {% for row in rows %}
             <tr id="hrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-surfacealt transition-colors">
               <td class="px-4 py-4">
-                <input type="checkbox" class="row-checkbox rounded text-accent focus:ring-accent" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+                <input type="checkbox" class="row-checkbox" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
               <td class="px-4 py-4">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ row.status_class }}">
@@ -81,7 +81,7 @@
               <td class="px-4 py-4 text-center text-sm text-inkmuted">{{ row.size_human }}</td>
               <td class="px-4 py-4 text-center text-sm text-inkmuted">{{ row.created_at[:10] if row.created_at else '?' }}</td>
               <td class="px-4 py-4 text-right whitespace-nowrap">
-                <button onclick="deleteTrack({{ row.id }}, {{ row.filepath.split('/')[-1]|tojson }})" class="px-3 py-1 border border-criticalsoft text-criticalstrong bg-criticalsoft hover:bg-criticalsoft text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+                <button onclick="deleteTrack({{ row.id }}, {{ row.filepath.split('/')[-1]|tojson }})" class="btn btn-danger-ghost btn-xs">Delete</button>
               </td>
             </tr>
             {% endfor %}

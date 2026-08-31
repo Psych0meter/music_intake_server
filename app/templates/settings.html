@@ -26,7 +26,7 @@
             <p class="text-sm text-inkmuted mt-0.5">Audio fingerprinting (Shazam-compatible) - free, unlimited, no key required.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="songrec_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <input type="checkbox" id="songrec_enabled" class="cb-lg">
             <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
@@ -45,14 +45,13 @@
             <p class="text-sm text-inkmuted mt-0.5">Acoustic fingerprinting via AcoustID/MusicBrainz - free, unlimited, requires an API key.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="acoustid_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <input type="checkbox" id="acoustid_enabled" class="cb-lg">
             <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
         <div id="acoustid_fields" class="mt-4">
           <label class="block text-sm font-medium text-ink mb-1" for="acoustid_api_key">API key</label>
-          <input type="password" id="acoustid_api_key" autocomplete="off"
-                 class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+          <input type="password" id="acoustid_api_key" autocomplete="off" class="field-control">
           <p class="text-xs text-inkmuted mt-1">
             <span id="acoustid_api_key_status">Checking...</span> -
             leave blank to keep the current key. Free at
@@ -69,7 +68,7 @@
             <p class="text-sm text-inkmuted mt-0.5">Local Whisper transcription + Genius lyrics search - only runs when SongRec and AcoustID both find nothing.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="genius_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <input type="checkbox" id="genius_enabled" class="cb-lg">
             <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
@@ -81,8 +80,7 @@
         <div id="genius_fields" class="mt-4 space-y-4">
           <div>
             <label class="block text-sm font-medium text-ink mb-1" for="genius_access_token">Genius access token</label>
-            <input type="password" id="genius_access_token" autocomplete="off"
-                   class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+            <input type="password" id="genius_access_token" autocomplete="off" class="field-control">
             <p class="text-xs text-inkmuted mt-1">
               <span id="genius_access_token_status">Checking...</span> -
               leave blank to keep the current token. Free at
@@ -93,7 +91,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-medium text-ink mb-1" for="whisper_model_size">Model size</label>
-              <select id="whisper_model_size" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+              <select id="whisper_model_size" class="w-full">
                 <option value="tiny">tiny</option>
                 <option value="base">base</option>
                 <option value="small">small</option>
@@ -103,14 +101,14 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-ink mb-1" for="whisper_device">Device</label>
-              <select id="whisper_device" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+              <select id="whisper_device" class="w-full">
                 <option value="cpu">cpu</option>
                 <option value="cuda">cuda</option>
               </select>
             </div>
             <div>
               <label class="block text-sm font-medium text-ink mb-1" for="whisper_compute_type">Compute type</label>
-              <select id="whisper_compute_type" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+              <select id="whisper_compute_type" class="w-full">
                 <option value="int8">int8</option>
                 <option value="float16">float16</option>
                 <option value="float32">float32</option>
@@ -126,15 +124,14 @@
         <p class="text-sm text-inkmuted mt-0.5">How many files to identify concurrently. Picked up at the start of the next scan cycle - no restart needed.</p>
         <div class="mt-4 max-w-xs">
           <label class="block text-sm font-medium text-ink mb-1" for="scan_workers">Scan workers</label>
-          <input type="number" id="scan_workers" min="0" max="64" step="1"
-                 class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+          <input type="number" id="scan_workers" min="0" max="64" step="1" class="field-control">
           <p class="text-xs text-inkmuted mt-1">0 = auto (min(8, CPU count)). Raise it if you have spare cores and a fast
             connection to your source; lower it if you're hitting AcoustID/iTunes/Genius rate limits.</p>
         </div>
       </div>
 
       <div class="flex items-center gap-3">
-        <button type="submit" class="px-4 py-2 bg-accent text-white rounded-lg text-sm font-semibold hover:bg-accentstrong shadow-sm transition">
+        <button type="submit" class="btn btn-primary">
           Save Settings
         </button>
         <span id="save-status" class="text-sm text-inkmuted"></span>

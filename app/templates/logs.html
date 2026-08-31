@@ -18,34 +18,36 @@
     .log-terminal { background: #14161b; color: #d4d8e0; max-height: 600px; overflow-y: auto; }
 {% endblock %}
 
-{% block header_actions %}
-        <button onclick="toggleFilters()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface border border-line hover:bg-surfacealt shadow-sm flex items-center gap-1">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 000 1.414l6.414 6.414a1 1 0 01-1.414 1.414L9 13.414l-5.293 5.293a1 1 0 01-1.414-1.414L7.586 12 2.293 6.707a1 1 0 01.293-.707V4z"></path>
-          </svg>
-          Filters
-        </button>
-        <button onclick="refreshLogs()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent text-white hover:bg-accentstrong shadow-sm flex items-center gap-1">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"></path>
-          </svg>
-          Refresh
-        </button>
-        <button onclick="clearAllLogs()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-critical text-white hover:bg-criticalstrong shadow-sm flex items-center gap-1">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-          </svg>
-          Clear All
-        </button>
-{% endblock %}
-
 {% block content %}
+    <!-- Page-specific toolbar - lives in the content area, not the shared
+         top bar, so the nav above stays identical on every page. -->
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <button onclick="toggleFilters()" class="btn btn-secondary btn-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 000 1.414l6.414 6.414a1 1 0 01-1.414 1.414L9 13.414l-5.293 5.293a1 1 0 01-1.414-1.414L7.586 12 2.293 6.707a1 1 0 01.293-.707V4z"></path>
+        </svg>
+        Filters
+      </button>
+      <button onclick="refreshLogs()" class="btn btn-primary btn-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M4 20h5v-5M20 4h-5v5"></path>
+        </svg>
+        Refresh
+      </button>
+      <button onclick="clearAllLogs()" class="btn btn-danger-ghost btn-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+        Clear All
+      </button>
+    </div>
+
     <!-- Filter Panel -->
     <div id="filter-panel" class="hidden mb-6 bg-surface border border-line rounded-xl p-4 shadow-sm gap-4">
       <div class="flex flex-wrap items-center gap-4">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-ink">Log Level:</span>
-          <select id="log-level-filter" class="border border-line rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-accent focus:border-accent">
+          <select id="log-level-filter">
             <option value="all">All Levels</option>
             <option value="error">Error Only</option>
             <option value="warn">Warning Only</option>
@@ -53,12 +55,12 @@
           </select>
         </div>
         <div class="flex items-center gap-2">
-          <input type="text" id="log-search" placeholder="Search logs..." class="border border-line rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-accent focus:border-accent w-64">
-          <button onclick="applyFilters()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent text-white hover:bg-accentstrong shadow-sm">Search</button>
+          <input type="text" id="log-search" placeholder="Search logs..." class="field-control" style="width: 16rem;">
+          <button onclick="applyFilters()" class="btn btn-primary btn-sm">Search</button>
         </div>
         <div class="flex items-center gap-2">
           <label class="flex items-center gap-2 text-sm font-medium text-ink cursor-pointer">
-            <input type="checkbox" id="auto-refresh" class="rounded text-accent focus:ring-accent">
+            <input type="checkbox" id="auto-refresh">
             <span>Auto-refresh (5s)</span>
           </label>
         </div>
@@ -74,8 +76,8 @@
             <span class="text-xs text-inkmuted font-mono">{{ log.path }}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="downloadLog('{{ name }}')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-accentsoft text-accentstrong hover:bg-accentsoft border border-accentsoft">Download</button>
-            <button onclick="clearLog('{{ name }}')" class="px-3 py-1 text-xs font-semibold rounded-lg bg-criticalsoft text-criticalstrong hover:bg-criticalsoft border border-criticalsoft">Clear</button>
+            <button onclick="downloadLog('{{ name }}')" class="btn btn-secondary btn-xs">Download</button>
+            <button onclick="clearLog('{{ name }}')" class="btn btn-danger-ghost btn-xs">Clear</button>
           </div>
         </div>
         <div class="p-4">

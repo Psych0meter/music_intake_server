@@ -57,68 +57,205 @@
     thead { position: sticky; top: 0; z-index: 10; background: var(--surfacealt); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .item-row.is-selected { background-color: var(--accentsoft); }
 
-    /* Shared nav, used on every page's header */
-    .nav-link {
-      padding: 0.5rem 0.75rem;
+    /* ---- App shell: sticky top bar + centered main, matching the approved mockup ---- */
+    .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+    header.topbar {
       background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 0.5rem;
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--inkmuted);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-      transition: background-color .15s, color .15s, border-color .15s;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    .topbar-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      height: 56px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+      color: var(--ink);
       white-space: nowrap;
     }
-    .nav-link:hover { background-color: var(--surfacealt); color: var(--ink); }
-    .nav-link-active, .nav-link-active:hover { background-color: var(--accent); color: #fff; border-color: var(--accentstrong); }
+    .brand-mark {
+      width: 20px; height: 20px;
+      border-radius: 5px;
+      background: var(--accent);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .brand-mark svg { width: 12px; height: 12px; display: block; }
+    nav.primary-nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
+    nav.primary-nav a {
+      color: var(--inkmuted);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13.5px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: background-color .12s ease, color .12s ease;
+    }
+    nav.primary-nav a:hover { background: var(--surfacealt); color: var(--ink); }
+    nav.primary-nav a.nav-active { color: var(--accentstrong); background: var(--accentsoft); }
+
+    /* ---- Scan status bar ---- */
+    .scanbar { background: var(--surface); border-bottom: 1px solid var(--line); }
+    .scanbar-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .scan-status-text { font-size: 12.5px; color: var(--inkmuted); white-space: nowrap; display: flex; align-items: center; gap: 7px; }
+    .scan-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 3px var(--accentsoft);
+      animation: scan-pulse 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: reduce) { .scan-dot { animation: none; } }
+    @keyframes scan-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .scan-track { flex: 1; height: 5px; border-radius: 3px; background: var(--surfacealt); overflow: hidden; }
+    .scan-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width 0.5s ease; }
+    .scan-fill.is-paused { background: var(--warning); }
+    .scan-count { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--inkmuted); white-space: nowrap; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+    main.app-main { flex: 1; max-width: 1400px; margin: 0 auto; padding: 22px 24px 48px; width: 100%; }
+
+    .page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .page-head h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; color: var(--ink); }
+    .page-head .sub { color: var(--inkmuted); font-size: 13px; margin-top: 2px; }
+
+    /* ---- Buttons: shared across every page, matching the approved mockup ---- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+      font-weight: 700; font-size: 12.5px; line-height: 1;
+      padding: 7px 13px; border-radius: 7px; border: 1px solid transparent;
+      cursor: pointer; white-space: nowrap;
+      transition: background-color .12s ease, border-color .12s ease, color .12s ease, opacity .12s ease, filter .12s ease;
+    }
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+    .btn-xs { padding: 4px 8px; font-size: 11.5px; border-radius: 6px; }
+    .btn-block { width: 100%; }
+    .btn-primary { background: var(--accent); border-color: var(--accentstrong); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accentstrong); }
+    .btn-secondary { background: var(--surface); border-color: var(--line); color: var(--ink); }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--linestrong); background: var(--surfacealt); }
+    .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--linestrong); background: var(--surfacealt); }
+    .btn-success { background: var(--success); border-color: var(--successstrong); color: #fff; }
+    .btn-success:hover:not(:disabled) { background: var(--successstrong); }
+    .btn-warning { background: var(--warningsoft); border-color: var(--warningsoft); color: var(--warningstrong); }
+    .btn-warning:hover:not(:disabled) { filter: brightness(0.96); }
+    .btn-danger { background: var(--critical); border-color: var(--criticalstrong); color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: var(--criticalstrong); }
+    .btn-danger-ghost { background: var(--surface); border-color: var(--criticalsoft); color: var(--critical); }
+    .btn-danger-ghost:hover:not(:disabled) { background: var(--critical); border-color: var(--criticalstrong); color: #fff; }
+    .btn-on-accent { background: var(--surface); border-color: transparent; color: var(--ink); }
+    .btn-on-accent:hover:not(:disabled) { background: var(--surfacealt); }
+    .btn-on-accent-strong { background: var(--accentstrong); border-color: var(--accentstrong); color: #fff; }
+    .btn-on-accent-strong:hover:not(:disabled) { filter: brightness(1.1); }
+
+    .icon-btn {
+      width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--line);
+      background: var(--surface); color: var(--inkmuted); display: inline-grid; place-items: center; cursor: pointer;
+    }
+    .icon-btn:hover { border-color: var(--linestrong); color: var(--ink); }
+
+    /* ---- Form controls: shared across every page ---- */
+    input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); border-radius: 4px; cursor: pointer; flex-shrink: 0; }
+    input[type="checkbox"].cb-lg { width: 18px; height: 18px; }
+
+    select, .field-control {
+      font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+      border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+      border-radius: 7px; font-size: 13px;
+    }
+    select {
+      font-weight: 600; font-size: 12.5px; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    }
+    .field-control { padding: 7px 11px; width: 100%; }
+    .field-control::placeholder { color: var(--inkfaint); }
+    select:focus, .field-control:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentsoft);
+    }
+    .field-control:disabled { opacity: 0.4; }
+
+    audio { border-radius: 6px; height: 32px; }
+
+    .count-pill {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--accentstrong);
+      background: var(--accentsoft);
+      border: 1px solid var(--accentsoft);
+      padding: 7px 13px;
+      border-radius: 7px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
     {% block extra_style %}{% endblock %}
   </style>
 </head>
 <body class="min-h-screen">
 
-  <div class="w-full px-6 py-8">
-    <!-- Persistent top bar - identical on every page, regardless of how much
-         (or how little) page-specific tooling a given page adds below it.
-         Page-specific controls (search, filters, etc.) belong in each
-         page's own content block, not in here. -->
-    <div class="flex flex-wrap items-center justify-between gap-4 pb-4 mb-6 border-b border-line">
-      <span class="text-lg font-bold text-ink tracking-tight">Music Intake</span>
-      <nav class="flex flex-wrap items-center gap-2">
-        <a href="/" class="nav-link {% if active_page == 'review' %}nav-link-active{% endif %}">Review</a>
-        <a href="/history" class="nav-link {% if active_page == 'history' %}nav-link-active{% endif %}">History</a>
-        <a href="/logs" class="nav-link {% if active_page == 'logs' %}nav-link-active{% endif %}">Logs</a>
-        <a href="/settings" class="nav-link {% if active_page == 'settings' %}nav-link-active{% endif %}">Settings</a>
-      </nav>
-    </div>
-
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-      <div>
-        <h1 class="text-3xl font-bold text-ink tracking-tight">{% block page_title %}Music Intake{% endblock %}</h1>
-        <p class="text-sm text-inkmuted mt-1">{% block page_subtitle %}{% endblock %}</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand">
+          <span class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 18V5l11-2v13" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" stroke="white" stroke-width="2"/><circle cx="17" cy="16" r="3" stroke="white" stroke-width="2"/></svg>
+          </span>
+          Music Intake
+        </span>
+        <nav class="primary-nav">
+          <a href="/" class="{% if active_page == 'review' %}nav-active{% endif %}">Review</a>
+          <a href="/history" class="{% if active_page == 'history' %}nav-active{% endif %}">History</a>
+          <a href="/logs" class="{% if active_page == 'logs' %}nav-active{% endif %}">Logs</a>
+          <a href="/settings" class="{% if active_page == 'settings' %}nav-active{% endif %}">Settings</a>
+        </nav>
       </div>
-      <div class="flex flex-wrap items-center gap-3">
-        {% block header_actions %}{% endblock %}
-      </div>
-    </div>
+    </header>
 
     <!-- Scan progress - visible on every page, not just Review, since a
          scan can be running while you're looking at History/Logs/Settings. -->
-    <div id="scan-bar-wrap" class="mt-3 mb-6 hidden">
-      <div class="flex items-center justify-between text-xs text-inkmuted mb-1">
-        <span id="scan-label" class="font-medium">Scanning...</span>
-        <div class="flex items-center gap-3">
-          <span id="scan-percent" class="font-mono">0%</span>
-          <button id="pause-btn" onclick="togglePause()" class="px-2 py-0.5 rounded bg-line hover:bg-line text-ink font-semibold transition-colors">Pause</button>
-        </div>
-      </div>
-      <div class="w-full h-2 bg-line rounded-full overflow-hidden">
-        <div id="scan-bar" class="h-full bg-accent transition-all duration-500" style="width: 0%;"></div>
+    <div id="scan-bar-wrap" class="scanbar hidden">
+      <div class="scanbar-inner">
+        <span id="scan-label" class="scan-status-text">
+          <span class="scan-dot"></span>
+          <span id="scan-label-text">Scanning...</span>
+        </span>
+        <div class="scan-track"><div id="scan-bar" class="scan-fill"></div></div>
+        <span id="scan-percent" class="scan-count">0%</span>
+        <button id="pause-btn" onclick="togglePause()" class="btn btn-ghost btn-sm">Pause</button>
       </div>
     </div>
 
-    {% block content %}{% endblock %}
+    <main class="app-main">
+      <div class="page-head">
+        <div>
+          <h1>{% block page_title %}Music Intake{% endblock %}</h1>
+          <p class="sub">{% block page_subtitle %}{% endblock %}</p>
+        </div>
+      </div>
+
+      {% block content %}{% endblock %}
+    </main>
   </div>
 
   <script>
@@ -133,11 +270,11 @@
 
         const wrap = document.getElementById('scan-bar-wrap');
         const bar = document.getElementById('scan-bar');
-        const label = document.getElementById('scan-label');
+        const labelText = document.getElementById('scan-label-text');
         const percent = document.getElementById('scan-percent');
         const pauseBtn = document.getElementById('pause-btn');
 
-        if (!wrap || !bar || !percent || !label || !pauseBtn) return;
+        if (!wrap || !bar || !percent || !labelText || !pauseBtn) return;
 
         if (scanData.scanning || scanData.is_paused) {
           wrap.classList.remove('hidden');
@@ -158,14 +295,14 @@
           if (scanData.is_paused) {
             isPaused = true;
             pauseBtn.textContent = 'Resume';
-            label.textContent = `⏸ Paused: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
-            bar.classList.replace('bg-accent', 'bg-warning');
+            labelText.textContent = `Paused: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
+            bar.classList.add('is-paused');
           } else {
             isPaused = false;
             pauseBtn.textContent = 'Pause';
             const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)}h ${etaMinutes % 60}min`;
-            label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
-            bar.classList.replace('bg-warning', 'bg-accent');
+            labelText.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
+            bar.classList.remove('is-paused');
           }
         } else {
           wrap.classList.add('hidden');
