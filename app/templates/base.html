@@ -39,6 +39,14 @@
       --success: #3d9a6c; --successstrong: #2f7a52; --successsoft: #e4f4ec;
       --warning: #c07f1f; --warningstrong: #9c6a1c; --warningsoft: #fbf0dd;
       --critical: #c14f4f; --criticalstrong: #a53f3f; --criticalsoft: #fbe9e9;
+      /* Shared shell gutter - one source of truth so the top bar, scan
+         bar, and main content column always line up. A fixed 1400px cap
+         with auto margins left huge dead space on wide monitors; there's
+         no max-width cap now, just a side gutter that scales with the
+         viewport (clamp so it never gets uncomfortably tight or
+         unnecessarily huge), so the table and every page fill the
+         available width and resize live as the window resizes. */
+      --shell-pad-x: clamp(16px, 3vw, 64px);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -51,7 +59,7 @@
         --critical: #de7373; --criticalstrong: #c25a5a; --criticalsoft: #35201f;
       }
     }
-    body { font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; background: var(--canvas); color: var(--ink); }
+    body { margin: 0; font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; background: var(--canvas); color: var(--ink); }
 
     /* Shared table header behavior (Review/History) */
     thead { position: sticky; top: 0; z-index: 10; background: var(--surfacealt); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -73,9 +81,7 @@
       z-index: 20;
     }
     .topbar-inner {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 0 24px;
+      padding: 0 var(--shell-pad-x);
       display: flex;
       align-items: center;
       gap: 28px;
@@ -116,9 +122,7 @@
     /* ---- Scan status bar ---- */
     .scanbar { background: var(--surface); border-bottom: 1px solid var(--line); }
     .scanbar-inner {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 12px 24px;
+      padding: 12px var(--shell-pad-x);
       display: flex;
       align-items: center;
       gap: 16px;
@@ -138,7 +142,7 @@
     .scan-fill.is-paused { background: var(--warning); }
     .scan-count { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--inkmuted); white-space: nowrap; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
 
-    main.app-main { flex: 1; max-width: 1400px; margin: 0 auto; padding: 22px 24px 48px; width: 100%; }
+    main.app-main { flex: 1; padding: 22px var(--shell-pad-x) 48px; width: 100%; box-sizing: border-box; }
 
     .page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
     .page-head h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; color: var(--ink); }
