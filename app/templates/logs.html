@@ -6,12 +6,16 @@
 {% block page_subtitle %}View recognize and web UI logs{% endblock %}
 
 {% block extra_style %}
-    .log-line { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
-    .log-error { color: #ef4444; }
-    .log-warn { color: #f59e0b; }
-    .log-info { color: #3b82f6; }
-    .log-debug { color: #6b7280; }
-    .log-container { max-height: 600px; overflow-y: auto; }
+    .log-line { font-family: 'IBM Plex Mono', 'Monaco', 'Menlo', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+    .log-error { color: #f87171; }
+    .log-warn { color: #fbbf24; }
+    .log-info { color: #7dd3fc; }
+    .log-debug { color: #9ca3af; }
+    /* Always a dark terminal, independent of the page's light/dark theme -
+       a log viewer reads as a terminal either way, and mixing it into the
+       theme tokens (as bg-ink previously did) turned it into an unreadable
+       near-white box whenever the page itself was in dark mode. */
+    .log-terminal { background: #14161b; color: #d4d8e0; max-height: 600px; overflow-y: auto; }
 {% endblock %}
 
 {% block header_actions %}
@@ -78,7 +82,7 @@
           {% if log.error %}
           <p class="text-critical text-sm">{{ log.error }}</p>
           {% else %}
-          <div class="bg-ink text-success p-4 rounded-lg log-container">
+          <div class="p-4 rounded-lg log-terminal">
             {% for entry in log.content %}
             <div class="log-line log-{{ entry.level }}" data-level="{{ entry.level }}">{{ entry.text }}</div>
             {% endfor %}

@@ -79,19 +79,27 @@
 <body class="min-h-screen">
 
   <div class="w-full px-6 py-8">
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-line pb-5 gap-4">
+    <!-- Persistent top bar - identical on every page, regardless of how much
+         (or how little) page-specific tooling a given page adds below it.
+         Page-specific controls (search, filters, etc.) belong in each
+         page's own content block, not in here. -->
+    <div class="flex flex-wrap items-center justify-between gap-4 pb-4 mb-6 border-b border-line">
+      <span class="text-lg font-bold text-ink tracking-tight">Music Intake</span>
+      <nav class="flex flex-wrap items-center gap-2">
+        <a href="/" class="nav-link {% if active_page == 'review' %}nav-link-active{% endif %}">Review</a>
+        <a href="/history" class="nav-link {% if active_page == 'history' %}nav-link-active{% endif %}">History</a>
+        <a href="/logs" class="nav-link {% if active_page == 'logs' %}nav-link-active{% endif %}">Logs</a>
+        <a href="/settings" class="nav-link {% if active_page == 'settings' %}nav-link-active{% endif %}">Settings</a>
+      </nav>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
       <div>
         <h1 class="text-3xl font-bold text-ink tracking-tight">{% block page_title %}Music Intake{% endblock %}</h1>
         <p class="text-sm text-inkmuted mt-1">{% block page_subtitle %}{% endblock %}</p>
       </div>
       <div class="flex flex-wrap items-center gap-3">
         {% block header_actions %}{% endblock %}
-        <div class="flex flex-wrap items-center gap-2 md:pl-3 md:ml-1 md:border-l md:border-line">
-          <a href="/" class="nav-link {% if active_page == 'review' %}nav-link-active{% endif %}">Review</a>
-          <a href="/history" class="nav-link {% if active_page == 'history' %}nav-link-active{% endif %}">History</a>
-          <a href="/logs" class="nav-link {% if active_page == 'logs' %}nav-link-active{% endif %}">Logs</a>
-          <a href="/settings" class="nav-link {% if active_page == 'settings' %}nav-link-active{% endif %}">Settings</a>
-        </div>
       </div>
     </div>
 
