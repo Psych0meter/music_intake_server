@@ -9,6 +9,8 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
+from settings import get_settings, update_settings, SETTINGS_SCHEMA, SECRET_KEYS
+
 # --- Setup ---
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
@@ -658,6 +660,57 @@ def purge_queue():
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
+
+def _settings_response(values):
+    """Shapes a settings.get_settings() dict for the API: secret values
+    (API keys/tokens) are never echoed back, only whether one is set -
+    the Settings page shows a masked placeholder instead of the real
+    value and only sends a replacement when the operator types one in."""
+    response = {}
+    for key in SETTINGS_SCHEMA:
+        if key in SECRET_KEYS:
+            response[f"{key}_set"] = bool(values.get(key))
+        else:
+            response[key] = values.get(key)
+    return response
+
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html")
+
+@app.route("/api/settings")
+def api_get_settings():
+    conn = get_db()
+    try:
+        values = get_settings(conn)
+    finally:
+        conn.close()
+    return jsonify(_settings_response(values))
+
+@app.route("/api/settings", methods=["POST"])
+def api_update_settings():
+    data = request.get_json() or {}
+    updates = {}
+    for key in SETTINGS_SCHEMA:
+        if key not in data:
+            continue
+        value = data[key]
+        if key in SECRET_KEYS:
+            # Blank/whitespace-only means "keep the current value" - there's
+            # no way to explicitly clear a key from this endpoint (disable
+            # the detector instead if you don't want it used).
+            if isinstance(value, str) and value.strip() == "":
+                continue
+        updates[key] = value
+
+    conn = get_db()
+    try:
+        written = update_settings(conn, updates)
+        values = get_settings(conn)
+    finally:
+        conn.close()
+
+    return jsonify({"status": "updated", "written": written, **_settings_response(values)})
 
 @app.route("/api/edit/<int:item_id>", methods=["POST"])
 def edit(item_id):
