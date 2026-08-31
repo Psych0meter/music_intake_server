@@ -70,21 +70,6 @@
     .detector-chip.applied .chip-field { color: var(--accentstrong); }
     .detector-chip.applied .chip-value::before { content: "\2713\00a0"; margin-right: 1px; }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      padding: 2px 7px;
-      border-radius: 5px;
-      white-space: nowrap;
-    }
-    .badge-warning { background: var(--warningsoft); color: var(--warningstrong); }
-    .badge-critical { background: var(--criticalsoft); color: var(--criticalstrong); }
-
     /* Editable Title/Artist/Album fields - transparent until hovered/focused,
        matching the approved mockup's .field-input treatment. */
     .field-input {
@@ -180,23 +165,22 @@
               <th class="px-4 py-4 col-album {% if sort_by == 'album' %}{{ order }}{% endif %}" data-sort-key="album" onclick="handleSortClick(this)">Album</th>
               <th class="px-4 py-4 col-size text-center {% if sort_by == 'size' %}{{ order }}{% endif %}" data-sort-key="size" onclick="handleSortClick(this)">Size</th>
               <th class="px-4 py-4 col-length text-center {% if sort_by == 'length' %}{{ order }}{% endif %}" data-sort-key="length" onclick="handleSortClick(this)">Length</th>
-              <th class="px-4 py-4 col-confidence text-center {% if sort_by == 'confidence' %}{{ order }}{% endif %}" data-sort-key="confidence" onclick="handleSortClick(this)">Confidence</th>
               <th class="px-4 py-4 col-actions text-right">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-surfacealt">
             {% for row in rows %}
-            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-surfacealt transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-criticalsoft hover:bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
+            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-surfacealt transition-colors {{ 'row-unrecognized' if not row.artist and not row.title else '' }} {{ 'bg-criticalsoft hover:bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
               <td class="px-4 py-4 align-top col-select">
                 <input type="checkbox" class="row-checkbox" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
               <td class="px-4 py-4 align-top col-source" data-val="{{ row.relative_path|lower }}">
                 <span class="text-sm font-medium text-ink block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
                 <span class="text-[11px] text-inkfaint block break-all font-mono max-w-[150px] mt-0.5" title="Absolute: {{ row.filepath }}">{{ row.relative_path }}</span>
-                {% if row.error or row.confidence == 0 or row.is_duplicate %}
+                {% if row.error or (not row.artist and not row.title) or row.is_duplicate %}
                 <div class="flex flex-wrap gap-1 mt-1.5">
                   {% if row.error %}<span class="badge badge-critical">⚠ Read Error</span>{% endif %}
-                  {% if row.confidence == 0 %}<span class="badge badge-critical">Unrecognized</span>{% endif %}
+                  {% if not row.artist and not row.title %}<span class="badge badge-critical">Unrecognized</span>{% endif %}
                   {% if row.is_duplicate %}<span class="badge badge-warning">Possible duplicate</span>{% endif %}
                 </div>
                 {% endif %}
@@ -285,17 +269,6 @@
               </td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-size" data-val="{{ row.filesize or 0 }}">{{ row.size_human }}</td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-length" data-val="{{ row.duration or 0 }}">{{ row.duration_human }}</td>
-              <td class="px-4 py-4 align-top text-center whitespace-nowrap col-confidence" data-val="{{ row.confidence }}">
-                {% if row.error %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">0% Error</span>
-                {% elif row.confidence >= 80 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-successsoft text-successstrong border border-success">{{ row.confidence }}%</span>
-                {% elif row.confidence >= 50 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-warningsoft text-warningstrong border border-warningsoft">{{ row.confidence }}%</span>
-                {% else %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">{{ row.confidence }}%</span>
-                {% endif %}
-              </td>
               <td class="px-4 py-4 align-top text-right whitespace-nowrap text-sm col-actions" data-val="">
                 <div class="flex flex-col gap-2">
                   <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="btn btn-success btn-xs btn-block">Approve</button>
@@ -330,7 +303,7 @@
 
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
-      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-surface border border-line rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-criticalsoft bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
+      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-surface border border-line rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if not row.artist and not row.title else '' }} {{ 'border-criticalsoft bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex items-start gap-3 min-w-0">
             <input type="checkbox" class="row-checkbox mt-1" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
@@ -342,9 +315,9 @@
           </div>
         </div>
 
-        {% if row.confidence == 0 or row.is_duplicate %}
+        {% if (not row.artist and not row.title) or row.is_duplicate %}
         <div class="flex flex-wrap gap-1 mb-2">
-          {% if row.confidence == 0 %}<span class="badge badge-critical">Unrecognized</span>{% endif %}
+          {% if not row.artist and not row.title %}<span class="badge badge-critical">Unrecognized</span>{% endif %}
           {% if row.is_duplicate %}<span class="badge badge-warning">Possible duplicate</span>{% endif %}
         </div>
         {% endif %}
@@ -491,7 +464,7 @@
       {% if detectors_enabled.acoustid %}'col-acoustid',{% endif %}
       {% if detectors_enabled.genius %}'col-genius',{% endif %}
       'col-title', 'col-artist', 'col-album', 'col-size',
-      'col-length', 'col-confidence', 'col-actions'
+      'col-length', 'col-actions'
     ];
 
     function initColumnToggle() {
@@ -576,7 +549,7 @@
     function handleSortClick(header) {
       const key = header.dataset.sortKey;
       const currentParams = new URLSearchParams(window.location.search);
-      const currentSort = currentParams.get('sort') || 'confidence';
+      const currentSort = currentParams.get('sort') || 'source';
       const currentOrder = currentParams.get('order') || 'asc';
       let newOrder = 'asc';
       if (currentSort === key && currentOrder === 'asc') {

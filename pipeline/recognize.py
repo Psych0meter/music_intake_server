@@ -438,6 +438,12 @@ def similarity(a, b):
     return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
 
 def best_pair_match(candidates):
+    """Finds the two detector candidates (songrec/acoustid/genius, each a
+    (name, artist, title) tuple) whose artist+title agree most closely.
+    Returns (avg_similarity, candidate_a, candidate_b) for the best-
+    agreeing pair if any two sources agree closely enough (>=0.6 average
+    similarity) to trust their consensus, or None if no pair agrees that
+    well - see identify_and_tag()'s selection order below."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -496,8 +502,12 @@ def identify_and_tag(filepath, settings=None):
             compute_type=settings.get("whisper_compute_type"),
         )
 
-    acoustid_confidence = round(score * 100, 1) if score else 0.0
-
+    # Which source's artist/title wins, in order of trust - no numeric
+    # score is synthesized for this any more (see below): each detector
+    # already shows its own raw value and, for AcoustID, its own score
+    # (ac_score) directly in the review UI, so a separate blended
+    # "confidence" percentage was redundant with - and looser than -
+    # what's already on screen per detector.
     candidates = [
         c for c in [
             ("songrec", sr_artist, sr_title),
@@ -508,43 +518,38 @@ def identify_and_tag(filepath, settings=None):
     match = best_pair_match(candidates)
 
     if match:
-        agree_score, (_, a1, t1), (_, a2, t2) = match
+        # Two sources agree closely on artist+title - trust that pair
+        # over anything else.
+        _, (_, a1, t1), (_, a2, t2) = match
         artist = a1 or a2
         title = t1 or t2
-        confidence = max(75.0, acoustid_confidence)
-        agreement = agree_score
     elif not sr_artist and not ac_artist and not gn_artist:
+        # Nothing found anything at all.
         artist, title = None, None
-        confidence = 0.0
-        agreement = None
     elif gn_artist and not sr_artist and not ac_artist:
+        # Genius/Whisper only ever runs as a last-resort fallback (see the
+        # gating above), so if it found something here, neither SongRec
+        # nor AcoustID found anything - take its answer as-is.
         artist, title = gn_artist, gn_title
-        confidence = 50.0
-        agreement = None
     else:
+        # SongRec and AcoustID disagree (or only one produced anything)
+        # and neither paired up with another source above - break the tie
+        # by checking each independently against iTunes' own catalog.
         sr_valid = itunes_verify(sr_artist, sr_title)
         ac_valid = itunes_verify(ac_artist, ac_title)
-        agreement = None
 
         if sr_valid and not ac_valid:
             artist, title = sr_artist, sr_title
-            confidence = 65.0
         elif ac_valid and not sr_valid:
             artist, title = ac_artist, ac_title
-            confidence = max(65.0, acoustid_confidence)
         else:
+            # Neither independently verified (or both did, which the
+            # agreement check above would already have caught) - fall
+            # back to SongRec's answer first, since docs/CONFIGURATION.md
+            # notes it's the more reliable source overall, then AcoustID,
+            # then Genius.
             artist = sr_artist or ac_artist or gn_artist
             title = sr_title or ac_title or gn_title
-            if sr_artist and ac_artist:
-                confidence = min(acoustid_confidence, 40.0)
-            elif acoustid_confidence:
-                confidence = acoustid_confidence
-            elif sr_artist:
-                confidence = 60.0
-            elif gn_artist:
-                confidence = 50.0
-            else:
-                confidence = 0.0
 
     album = sr_album
 
@@ -563,37 +568,37 @@ def identify_and_tag(filepath, settings=None):
     filehash = compute_filehash(filepath)
 
     return {
-        "artist": artist, "title": title, "album": album, "confidence": confidence,
+        "artist": artist, "title": title, "album": album,
         "filesize": filesize, "duration": duration, "filehash": filehash,
         "sr_artist": sr_artist, "sr_title": sr_title, "sr_album": sr_album,
         "ac_artist": ac_artist, "ac_title": ac_title, "ac_score": score,
-        "gn_artist": gn_artist, "gn_title": gn_title, "agreement": agreement,
+        "gn_artist": gn_artist, "gn_title": gn_title,
         "mtime": mtime,
     }
 
 def _write_queue_row(conn, filepath, result):
     conn.execute(
         "INSERT INTO queue "
-        "(filepath, artist, title, album, confidence, filesize, duration, filehash, "
-        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, gn_artist, gn_title, agreement, error, status, mtime) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending', ?) "
+        "(filepath, artist, title, album, filesize, duration, filehash, "
+        " sr_artist, sr_title, sr_album, ac_artist, ac_title, ac_score, gn_artist, gn_title, error, status, mtime) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, NULL, 'pending', ?) "
         "ON CONFLICT(filepath) DO UPDATE SET "
         "artist=excluded.artist, title=excluded.title, album=excluded.album, "
-        "confidence=excluded.confidence, filesize=excluded.filesize, duration=excluded.duration, "
+        "filesize=excluded.filesize, duration=excluded.duration, "
         "filehash=excluded.filehash, sr_artist=excluded.sr_artist, sr_title=excluded.sr_title, "
         "sr_album=excluded.sr_album, ac_artist=excluded.ac_artist, ac_title=excluded.ac_title, "
         "ac_score=excluded.ac_score, gn_artist=excluded.gn_artist, gn_title=excluded.gn_title, "
-        "agreement=excluded.agreement, error=NULL, status='pending', mtime=excluded.mtime",
-        (str(filepath), result["artist"], result["title"], result["album"], result["confidence"],
+        "error=NULL, status='pending', mtime=excluded.mtime",
+        (str(filepath), result["artist"], result["title"], result["album"],
          result["filesize"], result["duration"], result["filehash"],
          result["sr_artist"], result["sr_title"], result["sr_album"],
          result["ac_artist"], result["ac_title"], result["ac_score"],
-         result["gn_artist"], result["gn_title"], result["agreement"], result["mtime"])
+         result["gn_artist"], result["gn_title"], result["mtime"])
     )
     conn.commit()
     logger.info(
         f"Queued: {filepath.name} -> {result['artist']} / {result['title']} - "
-        f"{result['album'] or '?'} ({result['confidence']}%)"
+        f"{result['album'] or '?'}"
     )
 
 def process_file(conn, filepath, settings=None):
@@ -705,7 +710,7 @@ def scan_loop(poll_seconds=15):
                                 logger.error(f"Failed to process file {f}: {e}")
                                 try:
                                     conn.execute(
-                                        "INSERT INTO queue (filepath, confidence, error, status, mtime) VALUES (?, 0.0, ?, 'pending', ?) "
+                                        "INSERT INTO queue (filepath, error, status, mtime) VALUES (?, ?, 'pending', ?) "
                                         "ON CONFLICT(filepath) DO UPDATE SET error=excluded.error, status='pending', mtime=excluded.mtime",
                                         (str(f), str(e), f.stat().st_mtime)
                                     )

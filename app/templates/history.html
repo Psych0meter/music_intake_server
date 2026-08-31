@@ -47,7 +47,6 @@
               <th class="px-4 py-4">Track</th>
               <th class="px-4 py-4">Artist</th>
               <th class="px-4 py-4">Album</th>
-              <th class="px-4 py-4">Confidence</th>
               <th class="px-4 py-4">File</th>
               <th class="px-4 py-4">Size</th>
               <th class="px-4 py-4">Date</th>
@@ -61,22 +60,13 @@
                 <input type="checkbox" class="row-checkbox" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
               <td class="px-4 py-4">
-                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ row.status_class }}">
+                <span class="badge {{ row.status_class }}">
                   {{ row.status|capitalize }}
                 </span>
               </td>
               <td class="px-4 py-4 text-sm font-medium text-ink">{{ row.title or 'Unknown' }}</td>
               <td class="px-4 py-4 text-sm text-inkmuted">{{ row.artist or 'Unknown' }}</td>
               <td class="px-4 py-4 text-sm text-inkmuted">{{ row.album or 'Unknown' }}</td>
-              <td class="px-4 py-4 text-center">
-                {% if row.confidence >= 80 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-successsoft text-successstrong border border-success">{{ row.confidence|int }}%</span>
-                {% elif row.confidence >= 50 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-warningsoft text-warningstrong border border-warningsoft">{{ row.confidence|int }}%</span>
-                {% else %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">{{ row.confidence|int }}%</span>
-                {% endif %}
-              </td>
               <td class="px-4 py-4 text-xs font-mono text-inkmuted break-all">{{ row.filepath.split('/')[-1] }}</td>
               <td class="px-4 py-4 text-center text-sm text-inkmuted">{{ row.size_human }}</td>
               <td class="px-4 py-4 text-center text-sm text-inkmuted">{{ row.created_at[:10] if row.created_at else '?' }}</td>
@@ -209,7 +199,7 @@
         return;
       }
       
-      let csv = 'Status,Track,Artist,Album,Confidence,File,Size,Date\n';
+      let csv = 'Status,Track,Artist,Album,File,Size,Date\n';
       
       rows.forEach(row => {
         const cells = row.querySelectorAll('td');
@@ -217,10 +207,9 @@
         const track = cells[2]?.textContent?.trim() || '';
         const artist = cells[3]?.textContent?.trim() || '';
         const album = cells[4]?.textContent?.trim() || '';
-        const confidence = cells[5]?.textContent?.trim() || '';
-        const file = cells[6]?.textContent?.trim() || '';
-        const size = cells[7]?.textContent?.trim() || '';
-        const date = cells[8]?.textContent?.trim() || '';
+        const file = cells[5]?.textContent?.trim() || '';
+        const size = cells[6]?.textContent?.trim() || '';
+        const date = cells[7]?.textContent?.trim() || '';
         
         // Escape commas and quotes for CSV
         const escapeCSV = (str) => {
@@ -230,7 +219,7 @@
           return str;
         };
         
-        csv += `${escapeCSV(status)},${escapeCSV(track)},${escapeCSV(artist)},${escapeCSV(album)},${escapeCSV(confidence)},${escapeCSV(file)},${escapeCSV(size)},${escapeCSV(date)}\n`;
+        csv += `${escapeCSV(status)},${escapeCSV(track)},${escapeCSV(artist)},${escapeCSV(album)},${escapeCSV(file)},${escapeCSV(size)},${escapeCSV(date)}\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv' });

@@ -26,7 +26,6 @@ app = Flask(__name__)
 def setup_logging():
     import logging
     from logging.handlers import RotatingFileHandler
-    from pathlib import Path
 
     log_dir = Path("/opt/music-intake/logs")
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -213,7 +212,7 @@ def index():
     show_unrecognized = request.args.get("unrecognized", "0") == "1"
     show_duplicates = request.args.get("duplicates", "0") == "1"
 
-    sort_by = request.args.get("sort", "confidence")
+    sort_by = request.args.get("sort", "source")
     order = request.args.get("order", "asc")
 
     page = max(page, 1)
@@ -235,7 +234,7 @@ def index():
     query_params = []
 
     if not show_unrecognized:
-        query_conditions.append("confidence > 0")
+        query_conditions.append("(artist IS NOT NULL OR title IS NOT NULL)")
 
     if show_duplicates:
         query_conditions.append("filehash IN (SELECT filehash FROM queue WHERE status = 'pending' AND filehash IS NOT NULL AND filehash != '' GROUP BY filehash HAVING COUNT(*) > 1)")
@@ -259,9 +258,8 @@ def index():
         "album": "album",
         "size": "filesize",
         "length": "duration",
-        "confidence": "confidence"
     }
-    db_column = sort_map.get(sort_by, "confidence")
+    db_column = sort_map.get(sort_by, "filepath")
     db_order = "ASC" if order.lower() == "asc" else "DESC"
 
     total_count = conn.execute(
@@ -298,7 +296,6 @@ def index():
         d["ac_score_human"] = f"{r['ac_score'] * 100:.0f}%" if r["ac_score"] is not None else "-"
         d["error"] = r["error"]
         d["relative_path"] = relative_source(r["filepath"])
-        d["agreement_human"] = f"{r['agreement'] * 100:.0f}%" if r["agreement"] is not None else "-"
         d["is_duplicate"] = (r["filehash"] in dup_hashes) if r["filehash"] else False
         enriched.append(d)
 
@@ -325,7 +322,6 @@ def index():
                     "artist": r.get("artist", ""),
                     "title": r.get("title", ""),
                     "album": r.get("album", ""),
-                    "confidence": r.get("confidence", 0)
                 }
                 hash_groups[h]["duplicates"].append(dup_dict)
         else:
@@ -400,10 +396,10 @@ def history():
         d["error"] = r["error"]
         d["relative_path"] = relative_source(r["filepath"])
         d["status_class"] = {
-            'approved': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-            'rejected': 'bg-rose-50 text-rose-700 border-rose-200',
-            'pending': 'bg-amber-50 text-amber-700 border-amber-200'
-        }.get(r["status"], 'bg-gray-50 text-gray-700 border-gray-200')
+            'approved': 'badge-success',
+            'rejected': 'badge-critical',
+            'pending': 'badge-warning',
+        }.get(r["status"], 'badge-neutral')
         enriched.append(d)
 
     conn.close()

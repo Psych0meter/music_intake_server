@@ -68,8 +68,8 @@ double entries.
 ## Review UI
 
 - Inline audio preview, per-source identification comparison (SongRec /
-  AcoustID / Genius side by side when the lyrics fallback fires),
-  confidence scoring
+  AcoustID / Genius side by side when the lyrics fallback fires) with a
+  per-field picker to choose which detector's value to keep
 - Live scan progress bar with **Pause/Resume** — pausing takes effect
   within one file's processing time, not at the end of the current batch
 - Server-side pagination, search (by filename/artist/title/album), and

@@ -186,6 +186,26 @@
     }
     .icon-btn:hover { border-color: var(--linestrong); color: var(--ink); }
 
+    /* ---- Badges: small status/flag pills - Review's Unrecognized/
+       duplicate/error flags and History's approved/rejected/pending
+       status all share this. ---- */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .badge-success { background: var(--successsoft); color: var(--successstrong); }
+    .badge-warning { background: var(--warningsoft); color: var(--warningstrong); }
+    .badge-critical { background: var(--criticalsoft); color: var(--criticalstrong); }
+    .badge-neutral { background: var(--surfacealt); color: var(--inkmuted); }
+
     /* ---- Form controls: shared across every page ---- */
     input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); border-radius: 4px; cursor: pointer; flex-shrink: 0; }
     input[type="checkbox"].cb-lg { width: 18px; height: 18px; }
