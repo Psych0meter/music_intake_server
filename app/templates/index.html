@@ -22,9 +22,9 @@
        output is shown in monospace to set it apart from the editable
        track-info fields it feeds. */
     .chip-stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-    .chip-slot { height: 22px; display: flex; align-items: center; min-width: 0; overflow: hidden; }
+    .chip-slot { height: 22px; display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
     .chip-slot-empty { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: var(--inkfaint); }
-    .score-slot { margin-top: 5px; min-height: 15px; display: flex; align-items: center; }
+    .score-slot { margin-top: 5px; min-height: 15px; display: flex; align-items: center; gap: 5px; }
     .score-slot .score-value { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; }
 
     .detector-chip {
@@ -46,7 +46,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .detector-chip .chip-field {
+    .chip-field {
       font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
       font-size: 8.5px;
       font-weight: 800;
@@ -163,7 +163,7 @@
 
     {% if rows %}
     <div class="bg-surface border border-line rounded-xl shadow-sm overflow-visible hidden md:block" id="main-table-container">
-      <div class="overflow-x-auto">
+      <div class="table-scroll">
         <table class="w-full table-auto text-left border-collapse" id="review-table">
           <thead class="bg-surfacealt border-b border-line text-xs font-semibold uppercase tracking-wider text-inkmuted">
             <tr>
@@ -231,44 +231,44 @@
               <td class="px-4 py-4 align-top text-sm col-songrec" data-val="{{ row.sr_artist or '' }}">
                 <div class="chip-stack">
                   <div class="chip-slot">
-                    {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="false" title="Use SongRec's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="false" title="{{ row.sr_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(16) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
                   <div class="chip-slot">
-                    {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="false" title="Use SongRec's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="false" title="{{ row.sr_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(16) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
                   <div class="chip-slot">
-                    {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="false" title="Use SongRec's album"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="false" title="{{ row.sr_album }}"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(16) }}</span></button>{% else %}<span class="chip-field">Album</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
                 </div>
-                <div class="score-slot"><span class="score-slot-empty">–</span></div>
+                <div class="score-slot"><span class="chip-field">Score</span><span class="score-slot-empty">–</span></div>
               </td>
               {% endif %}
               {% if detectors_enabled.acoustid %}
               <td class="px-4 py-4 align-top text-sm col-acoustid" data-val="{{ row.ac_artist or '' }}">
                 <div class="chip-stack">
                   <div class="chip-slot">
-                    {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="false" title="Use AcoustID's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="false" title="{{ row.ac_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(16) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
                   <div class="chip-slot">
-                    {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="false" title="Use AcoustID's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="false" title="{{ row.ac_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(16) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
-                  <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+                  <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
                 </div>
-                <div class="score-slot">{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
+                <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
               </td>
               {% endif %}
               {% if detectors_enabled.genius %}
               <td class="px-4 py-4 align-top text-sm col-genius" data-val="{{ row.gn_artist or '' }}">
                 <div class="chip-stack">
                   <div class="chip-slot">
-                    {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="false" title="Use Genius's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="false" title="{{ row.gn_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(16) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
                   <div class="chip-slot">
-                    {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="false" title="Use Genius's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                    {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="false" title="{{ row.gn_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(16) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
                   </div>
-                  <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+                  <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
                 </div>
-                <div class="score-slot"><span class="score-slot-empty">–</span></div>
+                <div class="score-slot"><span class="chip-field">Score</span><span class="score-slot-empty">–</span></div>
               </td>
               {% endif %}
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
@@ -388,13 +388,13 @@
             <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">SongRec</p>
             <div class="chip-stack">
               <div class="chip-slot">
-                {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="true" title="Use SongRec's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="true" title="{{ row.sr_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(14) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
               <div class="chip-slot">
-                {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="true" title="Use SongRec's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="true" title="{{ row.sr_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(14) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
               <div class="chip-slot">
-                {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="true" title="Use SongRec's album"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="true" title="{{ row.sr_album }}"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(14) }}</span></button>{% else %}<span class="chip-field">Album</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
             </div>
           </div>
@@ -404,14 +404,14 @@
             <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">AcoustID</p>
             <div class="chip-stack">
               <div class="chip-slot">
-                {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="true" title="Use AcoustID's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="true" title="{{ row.ac_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(14) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
               <div class="chip-slot">
-                {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="true" title="Use AcoustID's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="true" title="{{ row.ac_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(14) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
-              <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+              <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
             </div>
-            <div class="score-slot">{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
+            <div class="score-slot"><span class="chip-field">Score</span>{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
           </div>
           {% endif %}
           {% if detectors_enabled.genius %}
@@ -419,12 +419,12 @@
             <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">Genius</p>
             <div class="chip-stack">
               <div class="chip-slot">
-                {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="true" title="Use Genius's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="true" title="{{ row.gn_title }}"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(14) }}</span></button>{% else %}<span class="chip-field">Title</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
               <div class="chip-slot">
-                {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="true" title="Use Genius's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="true" title="{{ row.gn_artist }}"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(14) }}</span></button>{% else %}<span class="chip-field">Artist</span><span class="chip-slot-empty">–</span>{% endif %}
               </div>
-              <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+              <div class="chip-slot"><span class="chip-field">Album</span><span class="chip-slot-empty">–</span></div>
             </div>
           </div>
           {% endif %}

@@ -57,6 +57,12 @@
     thead { position: sticky; top: 0; z-index: 10; background: var(--surfacealt); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .item-row.is-selected { background-color: var(--accentsoft); }
 
+    /* Table container scrolls both ways within the viewport, instead of
+       growing the whole page and pushing its horizontal scrollbar down
+       past every row - the sticky <thead> above stays pinned to the top
+       of THIS box once it has its own scroll, not just the page's. */
+    .table-scroll { overflow: auto; max-height: calc(100vh - 300px); min-height: 240px; }
+
     /* ---- App shell: sticky top bar + centered main, matching the approved mockup ---- */
     .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
     header.topbar {
