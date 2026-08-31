@@ -4,45 +4,89 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Music Intake{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            canvas: 'var(--canvas)', surface: 'var(--surface)', surfacealt: 'var(--surfacealt)',
+            line: 'var(--line)', linestrong: 'var(--linestrong)',
+            ink: 'var(--ink)', inkmuted: 'var(--inkmuted)', inkfaint: 'var(--inkfaint)',
+            accent: 'var(--accent)', accentstrong: 'var(--accentstrong)', accentsoft: 'var(--accentsoft)',
+            success: 'var(--success)', successstrong: 'var(--successstrong)', successsoft: 'var(--successsoft)',
+            warning: 'var(--warning)', warningstrong: 'var(--warningstrong)', warningsoft: 'var(--warningsoft)',
+            critical: 'var(--critical)', criticalstrong: 'var(--criticalstrong)', criticalsoft: 'var(--criticalsoft)',
+          },
+          fontFamily: {
+            sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    body { font-family: 'Inter', sans-serif; }
+    /* ---- Design tokens: slate/neutral base, single teal accent ---- */
+    :root {
+      --canvas: #f4f5f7; --surface: #ffffff; --surfacealt: #eceef2;
+      --line: #dde1e7; --linestrong: #c7cdd6;
+      --ink: #262a33; --inkmuted: #7d8492; --inkfaint: #a4aab5;
+      --accent: #2f6f5e; --accentstrong: #235347; --accentsoft: #e2efe9;
+      --success: #3d9a6c; --successstrong: #2f7a52; --successsoft: #e4f4ec;
+      --warning: #c07f1f; --warningstrong: #9c6a1c; --warningsoft: #fbf0dd;
+      --critical: #c14f4f; --criticalstrong: #a53f3f; --criticalsoft: #fbe9e9;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #14161b; --surface: #1b1e25; --surfacealt: #21252e;
+        --line: #2c313c; --linestrong: #3a4150;
+        --ink: #e7e9ed; --inkmuted: #9298a5; --inkfaint: #6c7280;
+        --accent: #58b39c; --accentstrong: #7ccab6; --accentsoft: #1d322c;
+        --success: #56b585; --successstrong: #3f9e72; --successsoft: #1a3226;
+        --warning: #d9a04a; --warningstrong: #c98a3f; --warningsoft: #332615;
+        --critical: #de7373; --criticalstrong: #c25a5a; --criticalsoft: #35201f;
+      }
+    }
+    body { font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; background: var(--canvas); color: var(--ink); }
 
     /* Shared table header behavior (Review/History) */
-    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .item-row.is-selected { background-color: #eef2ff; }
+    thead { position: sticky; top: 0; z-index: 10; background: var(--surfacealt); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .item-row.is-selected { background-color: var(--accentsoft); }
 
     /* Shared nav, used on every page's header */
     .nav-link {
       padding: 0.5rem 0.75rem;
-      background: white;
-      border: 1px solid #d1d5db;
+      background: var(--surface);
+      border: 1px solid var(--line);
       border-radius: 0.5rem;
       font-size: 0.875rem;
-      font-weight: 500;
-      color: #374151;
+      font-weight: 600;
+      color: var(--inkmuted);
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
       transition: background-color .15s, color .15s, border-color .15s;
       white-space: nowrap;
     }
-    .nav-link:hover { background-color: #f9fafb; }
-    .nav-link-active, .nav-link-active:hover { background-color: #4f46e5; color: white; border-color: #4f46e5; }
+    .nav-link:hover { background-color: var(--surfacealt); color: var(--ink); }
+    .nav-link-active, .nav-link-active:hover { background-color: var(--accent); color: #fff; border-color: var(--accentstrong); }
 
     {% block extra_style %}{% endblock %}
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen text-gray-800">
+<body class="min-h-screen">
 
   <div class="w-full px-6 py-8">
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-200 pb-5 gap-4">
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-line pb-5 gap-4">
       <div>
-        <h1 class="text-3xl font-bold text-gray-900 tracking-tight">{% block page_title %}Music Intake{% endblock %}</h1>
-        <p class="text-sm text-gray-500 mt-1">{% block page_subtitle %}{% endblock %}</p>
+        <h1 class="text-3xl font-bold text-ink tracking-tight">{% block page_title %}Music Intake{% endblock %}</h1>
+        <p class="text-sm text-inkmuted mt-1">{% block page_subtitle %}{% endblock %}</p>
       </div>
       <div class="flex flex-wrap items-center gap-3">
         {% block header_actions %}{% endblock %}
-        <div class="flex flex-wrap items-center gap-2 md:pl-3 md:ml-1 md:border-l md:border-gray-200">
+        <div class="flex flex-wrap items-center gap-2 md:pl-3 md:ml-1 md:border-l md:border-line">
           <a href="/" class="nav-link {% if active_page == 'review' %}nav-link-active{% endif %}">Review</a>
           <a href="/history" class="nav-link {% if active_page == 'history' %}nav-link-active{% endif %}">History</a>
           <a href="/logs" class="nav-link {% if active_page == 'logs' %}nav-link-active{% endif %}">Logs</a>
@@ -53,16 +97,16 @@
 
     <!-- Scan progress - visible on every page, not just Review, since a
          scan can be running while you're looking at History/Logs/Settings. -->
-    <div id="scan-bar-wrap" class="mb-6 hidden">
-      <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+    <div id="scan-bar-wrap" class="mt-3 mb-6 hidden">
+      <div class="flex items-center justify-between text-xs text-inkmuted mb-1">
         <span id="scan-label" class="font-medium">Scanning...</span>
         <div class="flex items-center gap-3">
           <span id="scan-percent" class="font-mono">0%</span>
-          <button id="pause-btn" onclick="togglePause()" class="px-2 py-0.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold transition-colors">Pause</button>
+          <button id="pause-btn" onclick="togglePause()" class="px-2 py-0.5 rounded bg-line hover:bg-line text-ink font-semibold transition-colors">Pause</button>
         </div>
       </div>
-      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div id="scan-bar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%;"></div>
+      <div class="w-full h-2 bg-line rounded-full overflow-hidden">
+        <div id="scan-bar" class="h-full bg-accent transition-all duration-500" style="width: 0%;"></div>
       </div>
     </div>
 
@@ -107,13 +151,13 @@
             isPaused = true;
             pauseBtn.textContent = 'Resume';
             label.textContent = `⏸ Paused: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
-            bar.classList.replace('bg-indigo-500', 'bg-amber-400');
+            bar.classList.replace('bg-accent', 'bg-warning');
           } else {
             isPaused = false;
             pauseBtn.textContent = 'Pause';
             const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)}h ${etaMinutes % 60}min`;
             label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
-            bar.classList.replace('bg-amber-400', 'bg-indigo-500');
+            bar.classList.replace('bg-warning', 'bg-accent');
           }
         } else {
           wrap.classList.add('hidden');

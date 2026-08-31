@@ -12,7 +12,7 @@
 
 {% block content %}
   <div class="max-w-3xl">
-    <div id="load-error" class="hidden mb-6 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-4 py-3">
+    <div id="load-error" class="hidden mb-6 bg-criticalsoft border border-criticalsoft text-criticalstrong text-sm rounded-lg px-4 py-3">
       Failed to load settings.
     </div>
 
@@ -22,15 +22,15 @@
       <div class="settings-card p-5">
         <div class="flex items-start justify-between">
           <div>
-            <h2 class="text-lg font-semibold text-gray-900">SongRec</h2>
-            <p class="text-sm text-gray-500 mt-0.5">Audio fingerprinting (Shazam-compatible) - free, unlimited, no key required.</p>
+            <h2 class="text-lg font-semibold text-ink">SongRec</h2>
+            <p class="text-sm text-inkmuted mt-0.5">Audio fingerprinting (Shazam-compatible) - free, unlimited, no key required.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="songrec_enabled" class="rounded text-indigo-600 focus:ring-indigo-500 h-5 w-5">
-            <span class="text-sm font-medium text-gray-700">Enabled</span>
+            <input type="checkbox" id="songrec_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
-        <div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+        <div class="mt-3 text-xs text-warningstrong bg-warningsoft border border-warningsoft rounded-lg px-3 py-2">
           <strong>Disabling this also stops Album from being filled in for most tracks.</strong>
           SongRec is currently the only detector whose album guess is reliable enough to be useful -
           AcoustID's album coverage is much weaker.
@@ -41,22 +41,22 @@
       <div class="settings-card p-5">
         <div class="flex items-start justify-between">
           <div>
-            <h2 class="text-lg font-semibold text-gray-900">AcoustID</h2>
-            <p class="text-sm text-gray-500 mt-0.5">Acoustic fingerprinting via AcoustID/MusicBrainz - free, unlimited, requires an API key.</p>
+            <h2 class="text-lg font-semibold text-ink">AcoustID</h2>
+            <p class="text-sm text-inkmuted mt-0.5">Acoustic fingerprinting via AcoustID/MusicBrainz - free, unlimited, requires an API key.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="acoustid_enabled" class="rounded text-indigo-600 focus:ring-indigo-500 h-5 w-5">
-            <span class="text-sm font-medium text-gray-700">Enabled</span>
+            <input type="checkbox" id="acoustid_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
         <div id="acoustid_fields" class="mt-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="acoustid_api_key">API key</label>
+          <label class="block text-sm font-medium text-ink mb-1" for="acoustid_api_key">API key</label>
           <input type="password" id="acoustid_api_key" autocomplete="off"
-                 class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
-          <p class="text-xs text-gray-500 mt-1">
+                 class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+          <p class="text-xs text-inkmuted mt-1">
             <span id="acoustid_api_key_status">Checking...</span> -
             leave blank to keep the current key. Free at
-            <a href="https://acoustid.org/my-applications" target="_blank" class="text-indigo-600 hover:underline">acoustid.org/my-applications</a>.
+            <a href="https://acoustid.org/my-applications" target="_blank" class="text-accent hover:underline">acoustid.org/my-applications</a>.
           </p>
         </div>
       </div>
@@ -65,35 +65,35 @@
       <div class="settings-card p-5">
         <div class="flex items-start justify-between">
           <div>
-            <h2 class="text-lg font-semibold text-gray-900">Genius / Whisper (lyrics fallback)</h2>
-            <p class="text-sm text-gray-500 mt-0.5">Local Whisper transcription + Genius lyrics search - only runs when SongRec and AcoustID both find nothing.</p>
+            <h2 class="text-lg font-semibold text-ink">Genius / Whisper (lyrics fallback)</h2>
+            <p class="text-sm text-inkmuted mt-0.5">Local Whisper transcription + Genius lyrics search - only runs when SongRec and AcoustID both find nothing.</p>
           </div>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" id="genius_enabled" class="rounded text-indigo-600 focus:ring-indigo-500 h-5 w-5">
-            <span class="text-sm font-medium text-gray-700">Enabled</span>
+            <input type="checkbox" id="genius_enabled" class="rounded text-accent focus:ring-accent h-5 w-5">
+            <span class="text-sm font-medium text-ink">Enabled</span>
           </label>
         </div>
-        <div class="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+        <div class="mt-3 text-xs text-warningstrong bg-warningsoft border border-warningsoft rounded-lg px-3 py-2">
           <strong>CPU-heavy when it actually runs</strong> (a real transcription pass, up to three 20-second clips per
           track) - though only on the genuine dead ends where SongRec and AcoustID both found nothing, never on every file.
           If you rely on it heavily on a large library, prefer more vCPUs over a very high Scan Workers value below.
         </div>
         <div id="genius_fields" class="mt-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1" for="genius_access_token">Genius access token</label>
+            <label class="block text-sm font-medium text-ink mb-1" for="genius_access_token">Genius access token</label>
             <input type="password" id="genius_access_token" autocomplete="off"
-                   class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
-            <p class="text-xs text-gray-500 mt-1">
+                   class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+            <p class="text-xs text-inkmuted mt-1">
               <span id="genius_access_token_status">Checking...</span> -
               leave blank to keep the current token. Free at
-              <a href="https://genius.com/api-clients" target="_blank" class="text-indigo-600 hover:underline">genius.com/api-clients</a>.
-              Requires <code class="bg-gray-100 px-1 rounded">faster-whisper</code> installed in the venv.
+              <a href="https://genius.com/api-clients" target="_blank" class="text-accent hover:underline">genius.com/api-clients</a>.
+              Requires <code class="bg-surfacealt px-1 rounded">faster-whisper</code> installed in the venv.
             </p>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="whisper_model_size">Model size</label>
-              <select id="whisper_model_size" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
+              <label class="block text-sm font-medium text-ink mb-1" for="whisper_model_size">Model size</label>
+              <select id="whisper_model_size" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
                 <option value="tiny">tiny</option>
                 <option value="base">base</option>
                 <option value="small">small</option>
@@ -102,15 +102,15 @@
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="whisper_device">Device</label>
-              <select id="whisper_device" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
+              <label class="block text-sm font-medium text-ink mb-1" for="whisper_device">Device</label>
+              <select id="whisper_device" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
                 <option value="cpu">cpu</option>
                 <option value="cuda">cuda</option>
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1" for="whisper_compute_type">Compute type</label>
-              <select id="whisper_compute_type" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
+              <label class="block text-sm font-medium text-ink mb-1" for="whisper_compute_type">Compute type</label>
+              <select id="whisper_compute_type" class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
                 <option value="int8">int8</option>
                 <option value="float16">float16</option>
                 <option value="float32">float32</option>
@@ -122,22 +122,22 @@
 
       <!-- Scan performance -->
       <div class="settings-card p-5">
-        <h2 class="text-lg font-semibold text-gray-900">Scan performance</h2>
-        <p class="text-sm text-gray-500 mt-0.5">How many files to identify concurrently. Picked up at the start of the next scan cycle - no restart needed.</p>
+        <h2 class="text-lg font-semibold text-ink">Scan performance</h2>
+        <p class="text-sm text-inkmuted mt-0.5">How many files to identify concurrently. Picked up at the start of the next scan cycle - no restart needed.</p>
         <div class="mt-4 max-w-xs">
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="scan_workers">Scan workers</label>
+          <label class="block text-sm font-medium text-ink mb-1" for="scan_workers">Scan workers</label>
           <input type="number" id="scan_workers" min="0" max="64" step="1"
-                 class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full px-3 py-2 shadow-sm">
-          <p class="text-xs text-gray-500 mt-1">0 = auto (min(8, CPU count)). Raise it if you have spare cores and a fast
+                 class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-full px-3 py-2 shadow-sm">
+          <p class="text-xs text-inkmuted mt-1">0 = auto (min(8, CPU count)). Raise it if you have spare cores and a fast
             connection to your source; lower it if you're hitting AcoustID/iTunes/Genius rate limits.</p>
         </div>
       </div>
 
       <div class="flex items-center gap-3">
-        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 shadow-sm transition">
+        <button type="submit" class="px-4 py-2 bg-accent text-white rounded-lg text-sm font-semibold hover:bg-accentstrong shadow-sm transition">
           Save Settings
         </button>
-        <span id="save-status" class="text-sm text-gray-500"></span>
+        <span id="save-status" class="text-sm text-inkmuted"></span>
       </div>
     </form>
   </div>

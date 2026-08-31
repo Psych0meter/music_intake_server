@@ -205,7 +205,10 @@ def _run_batch(conn, ids, fn):
 @app.route("/")
 def index():
     page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 50, type=int)
+    # Default page size is 20; the Review page exposes a "Rows per page"
+    # selector (10/20/50/100) that round-trips through this same query
+    # param, same as sort/page/filters.
+    per_page = request.args.get("per_page", 20, type=int)
     search_query = request.args.get("q", "").strip()
     show_unrecognized = request.args.get("unrecognized", "0") == "1"
     show_duplicates = request.args.get("duplicates", "0") == "1"

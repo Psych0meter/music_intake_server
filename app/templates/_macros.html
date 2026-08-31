@@ -3,23 +3,23 @@
 
 {% macro pagination(page, total_pages, total_count=none, compact=false) %}
 {% if total_pages > 1 %}
-<div class="flex items-center justify-between {{ 'mt-4' if compact else 'mt-6' }} bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-  <div class="text-sm text-gray-600">
+<div class="flex items-center justify-between {{ 'mt-4' if compact else 'mt-6' }} bg-surface border border-line rounded-xl px-4 py-3 shadow-sm">
+  <div class="text-sm text-inkmuted">
     {% if compact %}
-    Page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span>
+    Page <span class="font-semibold text-ink">{{ page }}</span> of <span class="font-semibold text-ink">{{ total_pages }}</span>
     {% else %}
-    Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span> pages
+    Showing page <span class="font-semibold text-ink">{{ page }}</span> of <span class="font-semibold text-ink">{{ total_pages }}</span> pages
     {% if total_count is not none %}({{ total_count }} total){% endif %}
     {% endif %}
   </div>
   <div class="flex items-center gap-2">
     {% if not compact %}
-    <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">« First</button>
+    <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">« First</button>
     {% endif %}
-    <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
-    <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+    <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">‹ Prev</button>
+    <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">Next ›</button>
     {% if not compact %}
-    <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Last »</button>
+    <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-surface border border-line rounded-lg text-ink hover:bg-surfacealt disabled:opacity-40">Last »</button>
     {% endif %}
   </div>
 </div>

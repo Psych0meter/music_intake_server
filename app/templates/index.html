@@ -8,9 +8,9 @@
 
 {% block extra_style %}
     th[data-sort-key] { cursor: pointer; user-select: none; position: relative; }
-    th[data-sort-key]:hover { background-color: #f3f4f6; }
-    th.asc::after { content: ' \25B2'; font-size: 0.75em; color: #4f46e5; font-weight: bold; }
-    th.desc::after { content: ' \25BC'; font-size: 0.75em; color: #4f46e5; font-weight: bold; }
+    th[data-sort-key]:hover { background-color: var(--surface); }
+    th.asc::after { content: ' \25B2'; font-size: 0.75em; color: var(--accent); font-weight: bold; }
+    th.desc::after { content: ' \25BC'; font-size: 0.75em; color: var(--accent); font-weight: bold; }
 
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
@@ -20,78 +20,113 @@
       .mobile-hide { display: none !important; }
     }
 
-    /* Per-field detector-value picker chips (Title/Artist/Album) */
+    /* Per-field detector-value picker chips (Title/Artist/Album), grouped
+       into a fixed Title/Artist/Album stack per detector column so the
+       same field lines up across SongRec/AcoustID/Genius. Raw detector
+       output is shown in monospace to set it apart from the editable
+       track-info fields it feeds. */
+    .chip-stack { display: flex; flex-direction: column; gap: 4px; }
+    .chip-slot { min-height: 22px; display: flex; align-items: center; }
+    .chip-slot-empty { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11px; color: var(--inkfaint); }
+    .score-slot { margin-top: 5px; min-height: 15px; display: flex; align-items: center; }
+    .score-slot .score-value { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; }
+
     .detector-chip {
-      font-size: 10px;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      max-width: 100%;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 11px;
       font-weight: 600;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background-color: #f1f5f9;
-      color: #475569;
-      border: 1px solid #e2e8f0;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background-color: var(--surfacealt);
+      color: var(--inkmuted);
+      border: 1px solid var(--line);
       cursor: pointer;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+    .detector-chip .chip-field {
+      font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--inkfaint);
+      flex-shrink: 0;
+    }
+    .detector-chip .chip-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .detector-chip:hover {
-      background-color: #eef2ff;
-      color: #4338ca;
-      border-color: #c7d2fe;
+      background-color: var(--accentsoft);
+      color: var(--accentstrong);
+      border-color: var(--accent);
     }
+    .detector-chip:hover .chip-field { color: var(--accentstrong); }
+    .detector-chip.applied {
+      background-color: var(--accentsoft);
+      color: var(--accentstrong);
+      border-color: var(--accent);
+    }
+    .detector-chip.applied .chip-field { color: var(--accentstrong); }
+    .detector-chip.applied .chip-value::before { content: "\2713 "; }
 {% endblock %}
 
 {% block header_actions %}
         <div class="relative">
           <input type="text" id="text-filter" placeholder="Search & press Enter..." value="{{ search_query }}"
-                 class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-64 px-3 py-2 shadow-sm">
+                 class="bg-surface border border-line text-ink text-sm rounded-lg focus:ring-accent focus:border-accent block w-64 px-3 py-2 shadow-sm">
         </div>
-        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 shadow-sm transition">
-          <input type="checkbox" id="toggle-unrecognized" class="rounded text-indigo-600 focus:ring-indigo-500" {% if show_unrecognized %}checked{% endif %}>
+        <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt shadow-sm transition">
+          <input type="checkbox" id="toggle-unrecognized" class="rounded text-accent focus:ring-accent" {% if show_unrecognized %}checked{% endif %}>
           <span>Show Unrecognized</span>
         </label>
-        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 shadow-sm transition">
-          <input type="checkbox" id="toggle-duplicates" class="rounded text-indigo-600 focus:ring-indigo-500" {% if show_duplicates %}checked{% endif %}>
+        <label class="flex items-center gap-2 text-sm font-medium text-ink bg-surface border border-line rounded-lg px-3 py-2 cursor-pointer hover:bg-surfacealt shadow-sm transition">
+          <input type="checkbox" id="toggle-duplicates" class="rounded text-accent focus:ring-accent" {% if show_duplicates %}checked{% endif %}>
           <span>Show Duplicates Only</span>
         </label>
         <div class="relative inline-block text-left">
-          <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none">
+          <button type="button" onclick="document.getElementById('col-menu').classList.toggle('hidden')" class="inline-flex justify-center w-full rounded-md border border-line shadow-sm px-4 py-2 bg-surface text-sm font-medium text-ink hover:bg-surfacealt focus:outline-none">
             Columns ▾
           </button>
-          <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-20">
+          <div id="col-menu" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-surface ring-1 ring-black ring-opacity-5 z-20">
             <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
           </div>
         </div>
-        <button onclick="purgeDB()" class="text-red-600 hover:text-white hover:bg-red-600 border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
+        <button onclick="purgeDB()" class="text-critical hover:text-white hover:bg-critical border border-criticalsoft bg-surface rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
           Purge Queue
         </button>
-        <div class="bg-indigo-50 text-indigo-700 font-medium px-4 py-2 rounded-lg text-sm border border-indigo-100 shadow-sm">
+        <div class="bg-accentsoft text-accentstrong font-medium px-4 py-2 rounded-lg text-sm border border-accentsoft shadow-sm">
           Matching: <span class="font-bold" id="pending-count">{{ total_count }}</span>
         </div>
 {% endblock %}
 
 {% block content %}
-    <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-indigo-600 text-white rounded-xl px-4 py-3 shadow-sm">
+    <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-accent text-white rounded-xl px-4 py-3 shadow-sm">
       <span class="text-sm font-medium"><span id="selected-count">0</span> selected on this page</span>
       <div class="flex items-center gap-2">
-        <button onclick="bulkAct('approve')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-400">Approve Selected</button>
-        <button onclick="bulkAct('reject')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-gray-800 hover:bg-gray-100">Reject Selected</button>
-        <button onclick="bulkAct('rescan')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500 hover:bg-amber-400">Rescan Selected</button>
-        <button onclick="bulkAct('delete')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-500 hover:bg-rose-400">Delete Selected</button>
-        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-700 hover:bg-indigo-800">Clear</button>
+        <button onclick="bulkAct('approve')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-success hover:bg-success">Approve Selected</button>
+        <button onclick="bulkAct('reject')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface text-ink hover:bg-surfacealt">Reject Selected</button>
+        <button onclick="bulkAct('rescan')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-warning hover:bg-warning">Rescan Selected</button>
+        <button onclick="bulkAct('delete')" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-critical hover:bg-critical">Delete Selected</button>
+        <button onclick="clearSelection()" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accentstrong hover:bg-accentstrong">Clear</button>
       </div>
     </div>
 
-    <div id="empty-state" class="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm {% if rows %}hidden{% endif %}">
-      <p class="text-gray-500 text-lg">No tracks match your current filters.</p>
+    <div id="empty-state" class="bg-surface border border-line rounded-xl p-12 text-center shadow-sm {% if rows %}hidden{% endif %}">
+      <p class="text-inkmuted text-lg">No tracks match your current filters.</p>
     </div>
 
     {% if rows %}
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible hidden md:block" id="main-table-container">
+    <div class="bg-surface border border-line rounded-xl shadow-sm overflow-visible hidden md:block" id="main-table-container">
       <div class="overflow-x-auto">
         <table class="w-full table-auto text-left border-collapse" id="review-table">
-          <thead class="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
+          <thead class="bg-surfacealt border-b border-line text-xs font-semibold uppercase tracking-wider text-inkmuted">
             <tr>
               <th class="px-4 py-4 col-select">
-                <input type="checkbox" id="select-all" class="rounded text-indigo-600 focus:ring-indigo-500" onchange="toggleSelectAll(this.checked)">
+                <input type="checkbox" id="select-all" class="rounded text-accent focus:ring-accent" onchange="toggleSelectAll(this.checked)">
               </th>
               <th class="px-4 py-4 col-source {% if sort_by == 'source' %}{{ order }}{% endif %}" data-sort-key="source" onclick="handleSortClick(this)">Source File / Path</th>
               <th class="px-4 py-4 col-preview">Preview</th>
@@ -107,28 +142,28 @@
               <th class="px-4 py-4 col-actions text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-surfacealt">
             {% for row in rows %}
-            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-gray-50/70 transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-red-50/40 hover:bg-red-50/60' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
+            <tr id="row-{{ row.id }}" data-id="{{ row.id }}" class="item-row hover:bg-surfacealt transition-colors {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'bg-criticalsoft hover:bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
               <td class="px-4 py-4 align-top col-select">
-                <input type="checkbox" class="row-checkbox rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+                <input type="checkbox" class="row-checkbox rounded text-accent focus:ring-accent" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
               </td>
               <td class="px-4 py-4 align-top col-source" data-val="{{ row.relative_path|lower }}">
-                <span class="text-sm font-medium text-gray-900 block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
-                <span class="text-[11px] text-gray-400 block break-all font-mono max-w-[150px] mt-0.5" title="Absolute: {{ row.filepath }}">{{ row.relative_path }}</span>
+                <span class="text-sm font-medium text-ink block break-words max-w-[150px]">{{ row.filepath.split('/')[-1] }}</span>
+                <span class="text-[11px] text-inkfaint block break-all font-mono max-w-[150px] mt-0.5" title="Absolute: {{ row.filepath }}">{{ row.relative_path }}</span>
                 {% if row.error %}
-                  <span class="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">⚠ Read Error</span>
+                  <span class="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">⚠ Read Error</span>
                 {% endif %}
                 {% if row.is_duplicate %}
-                  <div class="mt-3 border-l-2 border-rose-300 pl-2 space-y-1">
-                    <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+                  <div class="mt-3 border-l-2 border-criticalsoft pl-2 space-y-1">
+                    <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-accent hover:text-accentstrong font-medium flex items-center gap-1">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                       </svg>
                       View duplicates
                     </button>
-                    <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-amber-600 hover:text-amber-800 font-medium flex items-center gap-1">
+                    <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-warning hover:text-warningstrong font-medium flex items-center gap-1">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                       </svg>
@@ -139,7 +174,7 @@
               </td>
               <td class="px-4 py-4 align-top col-preview" data-val="">
                 {% if row.error %}
-                  <span class="text-xs text-gray-400 italic">Unreadable</span>
+                  <span class="text-xs text-inkfaint italic">Unreadable</span>
                 {% else %}
                   <audio controls preload="none" class="h-8 w-24 md:w-32">
                     <source src="{{ url_for('audio', item_id=row.id) }}">
@@ -148,68 +183,79 @@
               </td>
               {% if detectors_enabled.songrec %}
               <td class="px-4 py-4 align-top text-sm col-songrec" data-val="{{ row.sr_artist or '' }}">
-                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.sr_artist or '-' }}</span>
-                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.sr_title or '-' }}</span>
-                <span class="block text-gray-400 break-words max-w-[120px] text-xs mt-0.5">{{ row.sr_album or '' }}</span>
+                <div class="chip-stack">
+                  <div class="chip-slot">
+                    {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="false" title="Use SongRec's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot">
+                    {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="false" title="Use SongRec's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot">
+                    {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="false" title="Use SongRec's album"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                </div>
+                <div class="score-slot"><span class="score-slot-empty">–</span></div>
               </td>
               {% endif %}
               {% if detectors_enabled.acoustid %}
               <td class="px-4 py-4 align-top text-sm col-acoustid" data-val="{{ row.ac_artist or '' }}">
-                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.ac_artist or '-' }}</span>
-                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.ac_title or '-' }}</span>
-                <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">{{ row.ac_score_human }}</span>
+                <div class="chip-stack">
+                  <div class="chip-slot">
+                    {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="false" title="Use AcoustID's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot">
+                    {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="false" title="Use AcoustID's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+                </div>
+                <div class="score-slot">{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
               </td>
               {% endif %}
               {% if detectors_enabled.genius %}
               <td class="px-4 py-4 align-top text-sm col-genius" data-val="{{ row.gn_artist or '' }}">
-                <span class="block text-gray-900 break-words max-w-[120px]">{{ row.gn_artist or '-' }}</span>
-                <span class="block text-gray-500 break-words max-w-[120px]">{{ row.gn_title or '-' }}</span>
+                <div class="chip-stack">
+                  <div class="chip-slot">
+                    {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="false" title="Use Genius's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot">
+                    {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="false" title="Use Genius's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(16) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+                  </div>
+                  <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+                </div>
+                <div class="score-slot"><span class="score-slot-empty">–</span></div>
               </td>
               {% endif %}
               <td class="px-4 py-4 align-top col-title" data-val="{{ row.title or '' }}">
                 <input type="text" id="title-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Unknown Title" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
-                <div class="flex flex-wrap gap-1 mt-1 px-2">
-                  {% if detectors_enabled.songrec and row.sr_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="false" title="Use SongRec's title">SR: {{ row.sr_title|truncate(16) }}</button>{% endif %}
-                  {% if detectors_enabled.acoustid and row.ac_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="false" title="Use AcoustID's title">AC: {{ row.ac_title|truncate(16) }}</button>{% endif %}
-                  {% if detectors_enabled.genius and row.gn_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="false" title="Use Genius's title">GN: {{ row.gn_title|truncate(16) }}</button>{% endif %}
-                </div>
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
               </td>
               <td class="px-4 py-4 align-top col-artist" data-val="{{ row.artist or '' }}">
                 <input type="text" id="artist-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Unknown Artist" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
-                <div class="flex flex-wrap gap-1 mt-1 px-2">
-                  {% if detectors_enabled.songrec and row.sr_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="false" title="Use SongRec's artist">SR: {{ row.sr_artist|truncate(16) }}</button>{% endif %}
-                  {% if detectors_enabled.acoustid and row.ac_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="false" title="Use AcoustID's artist">AC: {{ row.ac_artist|truncate(16) }}</button>{% endif %}
-                  {% if detectors_enabled.genius and row.gn_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="false" title="Use Genius's artist">GN: {{ row.gn_artist|truncate(16) }}</button>{% endif %}
-                </div>
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40">
               </td>
               <td class="px-4 py-4 align-top col-album" data-val="{{ row.album or '' }}">
                 <input type="text" id="album-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Unknown Album" {{ 'disabled' if row.error }}
-                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:bg-white px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40 text-gray-600">
-                <div class="flex flex-wrap gap-1 mt-1 px-2">
-                  {% if detectors_enabled.songrec and row.sr_album %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="false" title="Use SongRec's album">SR: {{ row.sr_album|truncate(16) }}</button>{% endif %}
-                </div>
+                  class="w-full min-w-[120px] bg-transparent border-b border-transparent hover:border-line focus:border-accent focus:bg-surface px-2 py-1 text-sm rounded transition-all focus:outline-none disabled:opacity-40 text-inkmuted">
               </td>
-              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-size" data-val="{{ row.filesize or 0 }}">{{ row.size_human }}</td>
-              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-gray-500 col-length" data-val="{{ row.duration or 0 }}">{{ row.duration_human }}</td>
+              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-size" data-val="{{ row.filesize or 0 }}">{{ row.size_human }}</td>
+              <td class="px-4 py-4 align-top text-center whitespace-nowrap text-sm text-inkmuted col-length" data-val="{{ row.duration or 0 }}">{{ row.duration_human }}</td>
               <td class="px-4 py-4 align-top text-center whitespace-nowrap col-confidence" data-val="{{ row.confidence }}">
                 {% if row.error %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">0% Error</span>
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">0% Error</span>
                 {% elif row.confidence >= 80 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">{{ row.confidence }}%</span>
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-successsoft text-successstrong border border-success">{{ row.confidence }}%</span>
                 {% elif row.confidence >= 50 %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">{{ row.confidence }}%</span>
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-warningsoft text-warningstrong border border-warningsoft">{{ row.confidence }}%</span>
                 {% else %}
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">{{ row.confidence }}%</span>
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-criticalsoft text-criticalstrong border border-criticalsoft">{{ row.confidence }}%</span>
                 {% endif %}
               </td>
               <td class="px-4 py-4 align-top text-right whitespace-nowrap text-sm col-actions" data-val="">
                 <div class="flex flex-col gap-2">
-                  <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30 disabled:hover:bg-emerald-600">Approve</button>
-                  <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
-                  <button onclick="act({{ row.id }}, 'rescan')" class="px-3 py-1 border border-amber-300 text-xs font-semibold rounded text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm">Rescan</button>
-                  <button onclick="act({{ row.id }}, 'delete')" class="px-3 py-1 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+                  <button onclick="act({{ row.id }}, 'approve')" {{ 'disabled' if row.error }} class="px-3 py-1 border border-transparent text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm disabled:opacity-30 disabled:hover:bg-success">Approve</button>
+                  <button onclick="act({{ row.id }}, 'reject')" class="px-3 py-1 border border-line text-xs font-semibold rounded text-ink bg-surface hover:bg-surfacealt shadow-sm">Reject</button>
+                  <button onclick="act({{ row.id }}, 'rescan')" class="px-3 py-1 border border-warningsoft text-xs font-semibold rounded text-warningstrong bg-warningsoft hover:bg-warningsoft shadow-sm">Rescan</button>
+                  <button onclick="act({{ row.id }}, 'delete')" class="px-3 py-1 border border-criticalsoft text-criticalstrong bg-criticalsoft hover:bg-criticalsoft text-xs font-semibold rounded-lg shadow-sm">Delete</button>
                 </div>
               </td>
             </tr>
@@ -219,32 +265,46 @@
       </div>
     </div>
 
+    <!-- Rows per page - always visible, unlike the pagination bar below
+         which hides itself when there's only one page. -->
+    <div class="flex items-center justify-end gap-2 mt-4 text-sm text-inkmuted">
+      <label for="per-page-select" class="flex items-center gap-2">
+        Rows per page
+        <select id="per-page-select" class="border border-line rounded-lg px-2 py-1 text-sm bg-surface text-ink focus:ring-2 focus:ring-accentsoft focus:border-accent">
+          <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+          <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+          <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+        </select>
+      </label>
+    </div>
+
     <!-- Pagination Controls -->
     {{ macros.pagination(page, total_pages, total_count, compact=false) }}
 
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
-      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-white border border-gray-200 rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-red-300 bg-red-50/20' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
+      <div id="mrow-{{ row.id }}" data-id="{{ row.id }}" class="item-row bg-surface border border-line rounded-xl shadow-sm p-4 {{ 'row-unrecognized' if row.confidence == 0 else '' }} {{ 'border-criticalsoft bg-criticalsoft' if row.error else '' }} {{ 'row-duplicate' if row.is_duplicate else '' }}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="flex items-start gap-3 min-w-0">
-            <input type="checkbox" class="row-checkbox mt-1 rounded text-indigo-600 focus:ring-indigo-500" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
+            <input type="checkbox" class="row-checkbox mt-1 rounded text-accent focus:ring-accent" data-id="{{ row.id }}" onchange="toggleSelect({{ row.id }}, this.checked)">
             <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-900 break-words">{{ row.filepath.split('/')[-1] }}</p>
-              <p class="text-[11px] text-gray-400 font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
-              <p class="text-xs text-gray-400 mt-1">{{ row.size_human }} · {{ row.duration_human }}</p>
+              <p class="text-sm font-medium text-ink break-words">{{ row.filepath.split('/')[-1] }}</p>
+              <p class="text-[11px] text-inkfaint font-mono mt-0.5 break-all">{{ row.relative_path }}</p>
+              <p class="text-xs text-inkfaint mt-1">{{ row.size_human }} · {{ row.duration_human }}</p>
             </div>
           </div>
         </div>
 
         {% if row.is_duplicate %}
-          <div class="mb-3 border border-rose-200 bg-rose-50 rounded p-2 space-y-1">
-            <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+          <div class="mb-3 border border-criticalsoft bg-criticalsoft rounded p-2 space-y-1">
+            <button onclick="showDuplicateModal({{ row.id }})" class="text-xs text-accent hover:text-accentstrong font-medium flex items-center gap-1">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
               </svg>
               View duplicates
             </button>
-            <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-amber-600 hover:text-amber-800 font-medium flex items-center gap-1">
+            <button onclick="showFuzzyModal({{ row.id }})" class="text-xs text-warning hover:text-warningstrong font-medium flex items-center gap-1">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
               </svg>
@@ -254,7 +314,7 @@
         {% endif %}
 
         {% if row.error %}
-          <div class="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 font-mono break-all">
+          <div class="mb-3 p-2 bg-criticalsoft border border-criticalsoft rounded-lg text-xs text-criticalstrong font-mono break-all">
             <strong>Read Error:</strong> {{ row.error }}
           </div>
         {% else %}
@@ -262,64 +322,67 @@
         {% endif %}
 
         <div class="space-y-2 mb-3">
-          <div>
-            <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
-            <div class="flex flex-wrap gap-1 mt-1">
-              {% if detectors_enabled.songrec and row.sr_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="true" title="Use SongRec's title">SR: {{ row.sr_title|truncate(16) }}</button>{% endif %}
-              {% if detectors_enabled.acoustid and row.ac_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="true" title="Use AcoustID's title">AC: {{ row.ac_title|truncate(16) }}</button>{% endif %}
-              {% if detectors_enabled.genius and row.gn_title %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="true" title="Use Genius's title">GN: {{ row.gn_title|truncate(16) }}</button>{% endif %}
-            </div>
-          </div>
-          <div>
-            <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
-            <div class="flex flex-wrap gap-1 mt-1">
-              {% if detectors_enabled.songrec and row.sr_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="true" title="Use SongRec's artist">SR: {{ row.sr_artist|truncate(16) }}</button>{% endif %}
-              {% if detectors_enabled.acoustid and row.ac_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="true" title="Use AcoustID's artist">AC: {{ row.ac_artist|truncate(16) }}</button>{% endif %}
-              {% if detectors_enabled.genius and row.gn_artist %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="true" title="Use Genius's artist">GN: {{ row.gn_artist|truncate(16) }}</button>{% endif %}
-            </div>
-          </div>
-          <div>
-            <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 disabled:opacity-40">
-            <div class="flex flex-wrap gap-1 mt-1">
-              {% if detectors_enabled.songrec and row.sr_album %}<button type="button" class="detector-chip" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="true" title="Use SongRec's album">SR: {{ row.sr_album|truncate(16) }}</button>{% endif %}
-            </div>
-          </div>
+          <input type="text" id="title-m-{{ row.id }}" value="{{ row.title or '' }}" placeholder="Title" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
+          <input type="text" id="artist-m-{{ row.id }}" value="{{ row.artist or '' }}" placeholder="Artist" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
+          <input type="text" id="album-m-{{ row.id }}" value="{{ row.album or '' }}" placeholder="Album" {{ 'disabled' if row.error }} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-accentsoft focus:border-accent disabled:opacity-40">
         </div>
 
         {% set enabled_detector_count = detectors_enabled.songrec|int + detectors_enabled.acoustid|int + detectors_enabled.genius|int %}
         {% if enabled_detector_count > 0 %}
         <div class="grid grid-cols-{{ enabled_detector_count }} gap-2 text-xs mb-3">
           {% if detectors_enabled.songrec %}
-          <div class="text-center">
-            <p class="text-gray-400 mb-1">SongRec</p>
-            <p class="font-medium">{{ row.sr_artist or '-' }}</p>
-            <p class="text-gray-500 truncate">{{ row.sr_title or '-' }}</p>
-            <p class="text-gray-400 truncate text-[11px]">{{ row.sr_album or '' }}</p>
+          <div class="border border-line rounded-lg p-2">
+            <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">SongRec</p>
+            <div class="chip-stack">
+              <div class="chip-slot">
+                {% if row.sr_title %}<button type="button" class="detector-chip {{ 'applied' if row.sr_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.sr_title }}" data-mobile="true" title="Use SongRec's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.sr_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot">
+                {% if row.sr_artist %}<button type="button" class="detector-chip {{ 'applied' if row.sr_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.sr_artist }}" data-mobile="true" title="Use SongRec's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.sr_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot">
+                {% if row.sr_album %}<button type="button" class="detector-chip {{ 'applied' if row.sr_album == row.album }}" data-row-id="{{ row.id }}" data-field="album" data-value="{{ row.sr_album }}" data-mobile="true" title="Use SongRec's album"><span class="chip-field">Album</span><span class="chip-value">{{ row.sr_album|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+            </div>
           </div>
           {% endif %}
           {% if detectors_enabled.acoustid %}
-          <div class="text-center">
-            <p class="text-gray-400 mb-1">AcoustID</p>
-            <p class="font-medium">{{ row.ac_artist or '-' }}</p>
-            <p class="text-gray-500 truncate">{{ row.ac_title or '-' }}</p>
-            <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">{{ row.ac_score_human }}</span>
+          <div class="border border-line rounded-lg p-2">
+            <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">AcoustID</p>
+            <div class="chip-stack">
+              <div class="chip-slot">
+                {% if row.ac_title %}<button type="button" class="detector-chip {{ 'applied' if row.ac_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.ac_title }}" data-mobile="true" title="Use AcoustID's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.ac_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot">
+                {% if row.ac_artist %}<button type="button" class="detector-chip {{ 'applied' if row.ac_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.ac_artist }}" data-mobile="true" title="Use AcoustID's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.ac_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+            </div>
+            <div class="score-slot">{% if row.ac_score is not none %}<span class="score-value">{{ row.ac_score_human }}</span>{% else %}<span class="score-slot-empty">–</span>{% endif %}</div>
           </div>
           {% endif %}
           {% if detectors_enabled.genius %}
-          <div class="text-center">
-            <p class="text-gray-400 mb-1">Genius</p>
-            <p class="font-medium">{{ row.gn_artist or '-' }}</p>
-            <p class="text-gray-500 truncate">{{ row.gn_title or '-' }}</p>
+          <div class="border border-line rounded-lg p-2">
+            <p class="text-inkfaint mb-1 font-semibold uppercase tracking-wide text-[10px]">Genius</p>
+            <div class="chip-stack">
+              <div class="chip-slot">
+                {% if row.gn_title %}<button type="button" class="detector-chip {{ 'applied' if row.gn_title == row.title }}" data-row-id="{{ row.id }}" data-field="title" data-value="{{ row.gn_title }}" data-mobile="true" title="Use Genius's title"><span class="chip-field">Title</span><span class="chip-value">{{ row.gn_title|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot">
+                {% if row.gn_artist %}<button type="button" class="detector-chip {{ 'applied' if row.gn_artist == row.artist }}" data-row-id="{{ row.id }}" data-field="artist" data-value="{{ row.gn_artist }}" data-mobile="true" title="Use Genius's artist"><span class="chip-field">Artist</span><span class="chip-value">{{ row.gn_artist|truncate(14) }}</span></button>{% else %}<span class="chip-slot-empty">–</span>{% endif %}
+              </div>
+              <div class="chip-slot"><span class="chip-slot-empty">–</span></div>
+            </div>
           </div>
           {% endif %}
         </div>
         {% endif %}
 
         <div class="flex flex-wrap gap-2">
-          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-1.5 border border-transparent text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm disabled:opacity-30">Approve</button>
-          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-1.5 border border-gray-300 text-xs font-semibold rounded text-gray-700 bg-white hover:bg-gray-50 shadow-sm">Reject</button>
-          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-1.5 border border-amber-300 text-xs font-semibold rounded text-amber-700 bg-amber-50 hover:bg-amber-100 shadow-sm">Rescan</button>
-          <button onclick="act({{ row.id }}, 'delete', true)" class="flex-1 px-3 py-1.5 border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 text-xs font-semibold rounded-lg shadow-sm">Delete</button>
+          <button onclick="act({{ row.id }}, 'approve', true)" {{ 'disabled' if row.error }} class="flex-1 px-3 py-1.5 border border-transparent text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm disabled:opacity-30">Approve</button>
+          <button onclick="act({{ row.id }}, 'reject', true)" class="flex-1 px-3 py-1.5 border border-line text-xs font-semibold rounded text-ink bg-surface hover:bg-surfacealt shadow-sm">Reject</button>
+          <button onclick="act({{ row.id }}, 'rescan', true)" class="flex-1 px-3 py-1.5 border border-warningsoft text-xs font-semibold rounded text-warningstrong bg-warningsoft hover:bg-warningsoft shadow-sm">Rescan</button>
+          <button onclick="act({{ row.id }}, 'delete', true)" class="flex-1 px-3 py-1.5 border border-criticalsoft text-criticalstrong bg-criticalsoft hover:bg-criticalsoft text-xs font-semibold rounded-lg shadow-sm">Delete</button>
         </div>
       </div>
       {% endfor %}
@@ -332,10 +395,10 @@
 
   <!-- Duplicate Details Modal -->
   <div id="duplicate-modal" class="hidden fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
+    <div class="bg-surface rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-gray-900">Duplicate Track Details</h2>
-        <button onclick="closeDuplicateModal()" class="text-gray-400 hover:text-gray-600 p-1 -mr-2">
+        <h2 class="text-xl font-bold text-ink">Duplicate Track Details</h2>
+        <button onclick="closeDuplicateModal()" class="text-inkfaint hover:text-inkmuted p-1 -mr-2">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -347,10 +410,10 @@
 
   <!-- Fuzzy Similar Tracks Modal -->
   <div id="fuzzy-modal" class="hidden fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
+    <div class="bg-surface rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-gray-900">Similar Tracks (Fuzzy Match)</h2>
-        <button onclick="closeFuzzyModal()" class="text-gray-400 hover:text-gray-600 p-1 -mr-2">
+        <h2 class="text-xl font-bold text-ink">Similar Tracks (Fuzzy Match)</h2>
+        <button onclick="closeFuzzyModal()" class="text-inkfaint hover:text-inkmuted p-1 -mr-2">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -390,7 +453,7 @@
         const cb = document.createElement('label');
         cb.className = 'flex items-center gap-2 text-sm cursor-pointer';
         cb.innerHTML = `
-          <input type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500 column-toggle" 
+          <input type="checkbox" class="rounded text-accent focus:ring-accent column-toggle" 
             value="${col}" ${checked ? 'checked' : ''}>
           <span>${label}</span>
         `;
@@ -493,19 +556,44 @@
       navigate({ duplicates: e.target.checked ? '1' : '0', page: 1 });
     });
 
+    document.getElementById('per-page-select').addEventListener('change', (e) => {
+      navigate({ per_page: e.target.value, page: 1 });
+    });
+
     // Initialize column toggle on page load
     document.addEventListener('DOMContentLoaded', initColumnToggle);
 
-    // Per-field detector-value picker: clicking a chip (e.g. "SR: Some Title")
-    // copies that detector's raw value into the corresponding editable
-    // input, without saving anything - Approve/the normal save flow still
-    // reads whatever ends up in the input, same as typing it by hand.
+    // Per-field detector-value picker: clicking a chip (tagged with the
+    // field it targets, e.g. "TITLE  Some Title") copies that detector's
+    // raw value into the corresponding editable input, without saving
+    // anything - Approve/the normal save flow still reads whatever ends up
+    // in the input, same as typing it by hand.
+    //
+    // Only one detector's value can be applied per field per row: applying
+    // a chip clears the "applied" mark from every other chip sharing that
+    // row id + field (desktop and mobile chips share the same data-row-id/
+    // data-field, so this stays in sync across both layouts even though
+    // only one is visible at a given screen width).
     function applyDetectorValue(rowId, field, value, isMobile) {
       const inputId = isMobile ? `${field}-m-${rowId}` : `${field}-${rowId}`;
       const input = document.getElementById(inputId);
       if (!input) return;
       input.value = value;
       input.focus();
+
+      // Desktop and mobile render the same row's fields as two separate
+      // inputs (only one is visible at a given screen width) - keep the
+      // other one in sync too, so the "applied" chip state below always
+      // matches what's actually in both inputs, not just the one clicked.
+      const counterpartId = isMobile ? `${field}-${rowId}` : `${field}-m-${rowId}`;
+      const counterpart = document.getElementById(counterpartId);
+      if (counterpart) counterpart.value = value;
+
+      document.querySelectorAll(
+        `.detector-chip[data-row-id="${rowId}"][data-field="${field}"]`
+      ).forEach(chip => {
+        chip.classList.toggle('applied', chip.dataset.value === value);
+      });
     }
 
     function initDetectorChips() {
@@ -663,7 +751,7 @@
       const modal = document.getElementById('duplicate-modal');
       const content = document.getElementById('duplicate-content');
 
-      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Loading duplicates...</p></div>';
+      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto"></div><p class="mt-2 text-inkmuted">Loading duplicates...</p></div>';
       modal.classList.replace('hidden', 'flex');
 
       try {
@@ -676,32 +764,32 @@
 
         let html = `
           <div class="space-y-4">
-            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="bg-surfacealt rounded-lg p-4 border border-line">
               <div class="flex items-start gap-3">
                 <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${main.id}" checked disabled>
                 <div class="flex-1">
-                  <h3 class="text-lg font-semibold text-gray-900">Main Track</h3>
-                  <p class="text-sm font-medium text-gray-900 mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
-                  <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(main.relative_path)}</p>
-                  <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
+                  <h3 class="text-lg font-semibold text-ink">Main Track</h3>
+                  <p class="text-sm font-medium text-ink mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
+                  <p class="text-[11px] text-inkfaint font-mono break-all">${escapeHtml(main.relative_path)}</p>
+                  <p class="text-xs text-inkmuted mt-1">${main.size_human} · ${main.duration_human}</p>
                   <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
                   
                   <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                     <div>
-                      <p class="text-gray-400 mb-1">SongRec</p>
+                      <p class="text-inkfaint mb-1">SongRec</p>
                       <p class="font-medium truncate">${escapeHtml(main.sr_artist) || '-'}</p>
-                      <p class="text-gray-500 truncate">${escapeHtml(main.sr_title) || '-'}</p>
+                      <p class="text-inkmuted truncate">${escapeHtml(main.sr_title) || '-'}</p>
                     </div>
                     <div>
-                      <p class="text-gray-400 mb-1">AcoustID</p>
+                      <p class="text-inkfaint mb-1">AcoustID</p>
                       <p class="font-medium truncate">${escapeHtml(main.ac_artist) || '-'}</p>
-                      <p class="text-gray-500 truncate">${escapeHtml(main.ac_title) || '-'}</p>
-                      <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">${main.ac_score_human}</span>
+                      <p class="text-inkmuted truncate">${escapeHtml(main.ac_title) || '-'}</p>
+                      <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-surfacealt text-inkmuted">${main.ac_score_human}</span>
                     </div>
                     <div>
-                      <p class="text-gray-400 mb-1">Genius</p>
+                      <p class="text-inkfaint mb-1">Genius</p>
                       <p class="font-medium truncate">${escapeHtml(main.gn_artist) || '-'}</p>
-                      <p class="text-gray-500 truncate">${escapeHtml(main.gn_title) || '-'}</p>
+                      <p class="text-inkmuted truncate">${escapeHtml(main.gn_title) || '-'}</p>
                     </div>
                   </div>
                 </div>
@@ -710,35 +798,35 @@
         `;
 
         if (duplicates.length > 0) {
-          html += `<h3 class="text-lg font-semibold text-gray-900 pt-4 border-t border-gray-200">Duplicates (${duplicates.length})</h3>`;
-          html += `<p class="text-sm text-gray-500 -mt-2">Select which to keep or delete</p>`;
+          html += `<h3 class="text-lg font-semibold text-ink pt-4 border-t border-line">Duplicates (${duplicates.length})</h3>`;
+          html += `<p class="text-sm text-inkmuted -mt-2">Select which to keep or delete</p>`;
           
           duplicates.forEach((dup) => {
             html += `
-              <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
+              <div class="bg-surface rounded-lg p-4 border border-line mb-3">
                 <div class="flex items-start gap-3">
                   <input type="checkbox" class="duplicate-checkbox mt-1" data-id="${dup.id}">
                   <div class="flex-1">
-                    <p class="text-sm font-medium text-gray-900">${escapeHtml(dup.filepath.split('/').pop())}</p>
-                    <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
-                    <p class="text-xs text-gray-500 mt-1">${dup.size_human || human_size(dup.filesize)} · ${dup.duration_human || human_duration(dup.duration)}</p>
+                    <p class="text-sm font-medium text-ink">${escapeHtml(dup.filepath.split('/').pop())}</p>
+                    <p class="text-[11px] text-inkfaint font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
+                    <p class="text-xs text-inkmuted mt-1">${dup.size_human || human_size(dup.filesize)} · ${dup.duration_human || human_duration(dup.duration)}</p>
                     <audio controls class="mt-2 w-full"><source src="/api/audio/${dup.id}"></audio>
                     
                     <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                       <div>
-                        <p class="text-gray-400 mb-1">SongRec</p>
+                        <p class="text-inkfaint mb-1">SongRec</p>
                         <p class="font-medium truncate">${escapeHtml(dup.sr_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.sr_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.sr_title) || '-'}</p>
                       </div>
                       <div>
-                        <p class="text-gray-400 mb-1">AcoustID</p>
+                        <p class="text-inkfaint mb-1">AcoustID</p>
                         <p class="font-medium truncate">${escapeHtml(dup.ac_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.ac_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.ac_title) || '-'}</p>
                       </div>
                       <div>
-                        <p class="text-gray-400 mb-1">Genius</p>
+                        <p class="text-inkfaint mb-1">Genius</p>
                         <p class="font-medium truncate">${escapeHtml(dup.gn_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.gn_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.gn_title) || '-'}</p>
                       </div>
                     </div>
                   </div>
@@ -747,18 +835,18 @@
             `;
           });
         } else {
-          html += `<p class="text-gray-500 text-center py-4">No duplicates found for this track.</p>`;
+          html += `<p class="text-inkmuted text-center py-4">No duplicates found for this track.</p>`;
         }
 
         html += `
-          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
-            <button onclick="deleteSelectedDuplicates()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium shadow-sm transition-colors">
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-line">
+            <button onclick="deleteSelectedDuplicates()" class="px-4 py-2 bg-critical hover:bg-criticalstrong text-white rounded-lg font-medium shadow-sm transition-colors">
               Delete Selected
             </button>
-            <button onclick="keepOnlySelected()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="keepOnlySelected()" class="px-4 py-2 bg-accent hover:bg-accentstrong text-white rounded-lg font-medium shadow-sm transition-colors">
               Keep Only Selected
             </button>
-            <button onclick="closeDuplicateModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium shadow-sm transition-colors">
+            <button onclick="closeDuplicateModal()" class="px-4 py-2 bg-line hover:bg-line text-ink rounded-lg font-medium shadow-sm transition-colors">
               Close
             </button>
           </div>
@@ -766,7 +854,7 @@
 
         content.innerHTML = html;
       } catch (err) {
-        content.innerHTML = `<p class="text-red-600 p-4">Error loading duplicates: ${escapeHtml(err.message)}</p>`;
+        content.innerHTML = `<p class="text-critical p-4">Error loading duplicates: ${escapeHtml(err.message)}</p>`;
         console.error("Error loading duplicates:", err);
       }
     }
@@ -839,7 +927,7 @@
       const modal = document.getElementById('fuzzy-modal');
       const content = document.getElementById('fuzzy-content');
 
-      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Searching for similar tracks...</p></div>';
+      content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto"></div><p class="mt-2 text-inkmuted">Searching for similar tracks...</p></div>';
       modal.classList.replace('hidden', 'flex');
 
       try {
@@ -855,18 +943,18 @@
 
         let html = `
           <div class="space-y-4">
-            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h3 class="text-lg font-semibold text-gray-900">Reference Track</h3>
-              <p class="text-sm font-medium text-gray-900 mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
-              <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(main.relative_path || main.filepath)}</p>
-              <p class="text-xs text-gray-500 mt-1">${main.size_human} · ${main.duration_human}</p>
+            <div class="bg-surfacealt rounded-lg p-4 border border-line">
+              <h3 class="text-lg font-semibold text-ink">Reference Track</h3>
+              <p class="text-sm font-medium text-ink mt-1">${escapeHtml(main.filepath.split('/').pop())}</p>
+              <p class="text-[11px] text-inkfaint font-mono break-all">${escapeHtml(main.relative_path || main.filepath)}</p>
+              <p class="text-xs text-inkmuted mt-1">${main.size_human} · ${main.duration_human}</p>
               <audio controls class="mt-2 w-full"><source src="/api/audio/${main.id}"></audio>
             </div>
         `;
 
         if (fuzzyDuplicates.length > 0) {
-          html += `<h3 class="text-lg font-semibold text-gray-900 pt-4 border-t border-gray-200">Similar Tracks (${fuzzyDuplicates.length})</h3>`;
-          html += `<p class="text-sm text-gray-500 -mt-2">Tracks with similar size and duration</p>`;
+          html += `<h3 class="text-lg font-semibold text-ink pt-4 border-t border-line">Similar Tracks (${fuzzyDuplicates.length})</h3>`;
+          html += `<p class="text-sm text-inkmuted -mt-2">Tracks with similar size and duration</p>`;
           
           fuzzyDuplicates.forEach((dup) => {
             const sizeDiff = dup.size_diff !== undefined ? dup.size_diff : 0;
@@ -875,12 +963,12 @@
             const durDiffText = durDiff === 0 ? '' : `(${durDiff > 0 ? '+' : ''}${durDiff}s)`;
             
             html += `
-              <div class="bg-white rounded-lg p-4 border border-gray-200 mb-3">
+              <div class="bg-surface rounded-lg p-4 border border-line mb-3">
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex-1">
-                    <p class="text-sm font-medium text-gray-900">${escapeHtml(dup.filepath.split('/').pop())}</p>
-                    <p class="text-[11px] text-gray-400 font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
-                    <p class="text-xs text-gray-500 mt-1">
+                    <p class="text-sm font-medium text-ink">${escapeHtml(dup.filepath.split('/').pop())}</p>
+                    <p class="text-[11px] text-inkfaint font-mono break-all">${escapeHtml(dup.relative_path || dup.filepath)}</p>
+                    <p class="text-xs text-inkmuted mt-1">
                       ${dup.size_human || human_size(dup.filesize)} ${sizeDiffText}
                       · ${dup.duration_human || human_duration(dup.duration)} ${durDiffText}
                     </p>
@@ -888,26 +976,26 @@
                     
                     <div class="grid grid-cols-3 gap-4 mt-3 text-xs">
                       <div>
-                        <p class="text-gray-400 mb-1">SongRec</p>
+                        <p class="text-inkfaint mb-1">SongRec</p>
                         <p class="font-medium truncate">${escapeHtml(dup.sr_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.sr_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.sr_title) || '-'}</p>
                       </div>
                       <div>
-                        <p class="text-gray-400 mb-1">AcoustID</p>
+                        <p class="text-inkfaint mb-1">AcoustID</p>
                         <p class="font-medium truncate">${escapeHtml(dup.ac_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.ac_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.ac_title) || '-'}</p>
                       </div>
                       <div>
-                        <p class="text-gray-400 mb-1">Genius</p>
+                        <p class="text-inkfaint mb-1">Genius</p>
                         <p class="font-medium truncate">${escapeHtml(dup.gn_artist) || '-'}</p>
-                        <p class="text-gray-500 truncate">${escapeHtml(dup.gn_title) || '-'}</p>
+                        <p class="text-inkmuted truncate">${escapeHtml(dup.gn_title) || '-'}</p>
                       </div>
                     </div>
                     
                     <div class="flex gap-2 mt-3">
-                      <button onclick="act(${dup.id}, 'approve')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm">Approve</button>
-                      <button onclick="act(${dup.id}, 'reject')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 shadow-sm">Reject</button>
-                      <button onclick="act(${dup.id}, 'delete')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-rose-700 bg-rose-50 hover:bg-rose-100 shadow-sm">Delete</button>
+                      <button onclick="act(${dup.id}, 'approve')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-white bg-success hover:bg-successstrong shadow-sm">Approve</button>
+                      <button onclick="act(${dup.id}, 'reject')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-ink bg-surface border border-line hover:bg-surfacealt shadow-sm">Reject</button>
+                      <button onclick="act(${dup.id}, 'delete')" class="flex-1 px-2 py-1 text-xs font-semibold rounded text-criticalstrong bg-criticalsoft hover:bg-criticalsoft shadow-sm">Delete</button>
                     </div>
                   </div>
                 </div>
@@ -915,12 +1003,12 @@
             `;
           });
         } else {
-          html += `<p class="text-gray-500 text-center py-4">No similar tracks found.</p>`;
+          html += `<p class="text-inkmuted text-center py-4">No similar tracks found.</p>`;
         }
 
         html += `
-          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
-            <button onclick="closeFuzzyModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium shadow-sm transition-colors">
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t border-line">
+            <button onclick="closeFuzzyModal()" class="px-4 py-2 bg-line hover:bg-line text-ink rounded-lg font-medium shadow-sm transition-colors">
               Close
             </button>
           </div>
@@ -928,7 +1016,7 @@
 
         content.innerHTML = html;
       } catch (err) {
-        content.innerHTML = `<p class="text-red-600 p-4">Error loading similar tracks: ${escapeHtml(err.message)}</p>`;
+        content.innerHTML = `<p class="text-critical p-4">Error loading similar tracks: ${escapeHtml(err.message)}</p>`;
         console.error("Error loading fuzzy duplicates:", err);
       }
     }
