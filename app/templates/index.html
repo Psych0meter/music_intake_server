@@ -1,31 +1,19 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Music Intake Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    body { font-family: 'Inter', sans-serif; }
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% set active_page = "review" %}
 
+{% block title %}Music Intake Dashboard{% endblock %}
+{% block page_title %}Music Intake Review{% endblock %}
+{% block page_subtitle %}Verify metadata fingerprints and clear the incoming processing queue.{% endblock %}
+
+{% block extra_style %}
     th[data-sort-key] { cursor: pointer; user-select: none; position: relative; }
     th[data-sort-key]:hover { background-color: #f3f4f6; }
     th.asc::after { content: ' \25B2'; font-size: 0.75em; color: #4f46e5; font-weight: bold; }
     th.desc::after { content: ' \25BC'; font-size: 0.75em; color: #4f46e5; font-weight: bold; }
 
-    .item-row.is-selected { background-color: #eef2ff; }
     .hide-unrecognized .row-unrecognized { display: none !important; }
     .show-duplicates-only .item-row:not(.row-duplicate) { display: none !important; }
-
-    /* Fixed header - parent must have overflow-visible */
-    thead { position: sticky; top: 0; z-index: 10; background: #f9fafb; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-
-    /* Duplicate modal */
-    #duplicate-modal { display: none; }
-    #duplicate-modal.show { display: flex; }
-    #fuzzy-modal { display: none; }
-    #fuzzy-modal.show { display: flex; }
 
     /* Mobile column fix */
     @media (max-width: 767px) {
@@ -49,17 +37,9 @@
       color: #4338ca;
       border-color: #c7d2fe;
     }
-  </style>
-</head>
-<body class="bg-gray-50 min-h-screen text-gray-800" id="body-container">
+{% endblock %}
 
-  <div class="w-full px-6 py-8">
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 border-b border-gray-200 pb-5 gap-4">
-      <div>
-        <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Music Intake Review</h1>
-        <p class="text-sm text-gray-500 mt-1">Verify metadata fingerprints and clear the incoming processing queue.</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-3">
+{% block header_actions %}
         <div class="relative">
           <input type="text" id="text-filter" placeholder="Search & press Enter..." value="{{ search_query }}"
                  class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-64 px-3 py-2 shadow-sm">
@@ -80,31 +60,15 @@
             <div class="py-1 px-3 space-y-2" id="col-checkboxes"></div>
           </div>
         </div>
-        <a href="/settings" class="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition">Settings</a>
-        <a href="/history" class="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition">History</a>
-        <a href="/logs" class="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition">Logs</a>
         <button onclick="purgeDB()" class="text-red-600 hover:text-white hover:bg-red-600 border border-red-200 bg-white rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-all duration-150">
           Purge Queue
         </button>
         <div class="bg-indigo-50 text-indigo-700 font-medium px-4 py-2 rounded-lg text-sm border border-indigo-100 shadow-sm">
           Matching: <span class="font-bold" id="pending-count">{{ total_count }}</span>
         </div>
-      </div>
-    </div>
+{% endblock %}
 
-    <div id="scan-bar-wrap" class="mb-6 hidden">
-      <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
-        <span id="scan-label" class="font-medium">Scanning...</span>
-        <div class="flex items-center gap-3">
-          <span id="scan-percent" class="font-mono">0%</span>
-          <button id="pause-btn" onclick="togglePause()" class="px-2 py-0.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold transition-colors">Pause</button>
-        </div>
-      </div>
-      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div id="scan-bar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%;"></div>
-      </div>
-    </div>
-
+{% block content %}
     <div id="bulk-toolbar" class="mb-4 hidden items-center justify-between gap-3 bg-indigo-600 text-white rounded-xl px-4 py-3 shadow-sm">
       <span class="text-sm font-medium"><span id="selected-count">0</span> selected on this page</span>
       <div class="flex items-center gap-2">
@@ -256,20 +220,7 @@
     </div>
 
     <!-- Pagination Controls -->
-    {% if total_pages > 1 %}
-    <div class="flex items-center justify-between mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-      <div class="text-sm text-gray-600">
-        Showing page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span>
-        ({% if total_count %}{{ total_count }}{% else %}0{% endif %} total)
-      </div>
-      <div class="flex items-center gap-2">
-        <button onclick="changePage(1)" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">« First</button>
-        <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
-        <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
-        <button onclick="changePage({{ total_pages }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Last »</button>
-      </div>
-    </div>
-    {% endif %}
+    {{ macros.pagination(page, total_pages, total_count, compact=false) }}
 
     <div class="md:hidden space-y-4" id="mobile-cards-container">
       {% for row in rows %}
@@ -374,23 +325,13 @@
       {% endfor %}
 
       <!-- Mobile Pagination -->
-      {% if total_pages > 1 %}
-      <div class="flex items-center justify-between mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-        <div class="text-sm text-gray-600">
-          Page <span class="font-semibold text-gray-900">{{ page }}</span> of <span class="font-semibold text-gray-900">{{ total_pages }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="changePage({{ page - 1 }})" {% if page <= 1 %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
-          <button onclick="changePage({{ page + 1 }})" {% if page >= total_pages %}disabled{% endif %} class="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40">Next ›</button>
-        </div>
-      </div>
-      {% endif %}
+      {{ macros.pagination(page, total_pages, compact=true) }}
     </div>
     {% endif %}
   </div>
 
   <!-- Duplicate Details Modal -->
-  <div id="duplicate-modal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
+  <div id="duplicate-modal" class="hidden fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
     <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-gray-900">Duplicate Track Details</h2>
@@ -405,7 +346,7 @@
   </div>
 
   <!-- Fuzzy Similar Tracks Modal -->
-  <div id="fuzzy-modal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
+  <div id="fuzzy-modal" class="hidden fixed inset-0 bg-black/50 items-center justify-center z-50 p-4">
     <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold text-gray-900">Similar Tracks (Fuzzy Match)</h2>
@@ -418,11 +359,11 @@
       <div id="fuzzy-content"></div>
     </div>
   </div>
+{% endblock %}
 
+{% block extra_scripts %}
   <script>
     const selectedIds = new Set();
-    let isPaused = false;
-    let scanStartTime = null;
     let currentModalId = null;
 
     // Column visibility management. Detector columns the server already
@@ -486,7 +427,7 @@
     const showDuplicates = urlParams.get('duplicates') === '1';
 
     // Apply initial filter states
-    const body = document.getElementById('body-container');
+    const body = document.body;
     if (showUnrecognized) {
       body.classList.remove('hide-unrecognized');
       document.getElementById('toggle-unrecognized').checked = true;
@@ -710,67 +651,6 @@
       if (res.ok) window.location.reload();
     }
 
-    async function pollScanStatus() {
-      try {
-        const res = await fetch('/api/scan-status');
-        if (!res.ok) return;
-        const scanData = await res.json();
-
-        const wrap = document.getElementById('scan-bar-wrap');
-        const bar = document.getElementById('scan-bar');
-        const label = document.getElementById('scan-label');
-        const percent = document.getElementById('scan-percent');
-        const pauseBtn = document.getElementById('pause-btn');
-
-        if (!wrap || !bar || !percent || !label || !pauseBtn) return;
-
-        if (scanData.scanning || scanData.is_paused) {
-          wrap.classList.remove('hidden');
-          bar.style.width = `${scanData.percent}%`;
-          percent.textContent = `${scanData.percent}% (${scanData.processed}/${scanData.total})`;
-
-          // Calculate remaining time
-          const remaining = scanData.total - scanData.processed;
-          const elapsed = scanData.processed;
-          const now = Date.now() / 1000;
-          const startTime = scanData.start_time ? new Date(scanData.start_time).getTime() / 1000 
-            : now - (elapsed > 0 ? elapsed / (scanData.percent / 100 || 1) : 0);
-          const elapsedSeconds = now - startTime;
-          const rate = elapsedSeconds > 0 ? elapsed / elapsedSeconds : 0;
-          const etaSeconds = remaining / (rate > 0 ? rate : 1);
-          const etaMinutes = Math.ceil(etaSeconds / 60);
-
-          if (scanData.is_paused) {
-            isPaused = true;
-            pauseBtn.textContent = 'Resume';
-            label.textContent = `⏸ Paused: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''}`;
-            bar.classList.replace('bg-indigo-500', 'bg-amber-400');
-          } else {
-            isPaused = false;
-            pauseBtn.textContent = 'Pause';
-            const etaText = etaMinutes < 60 ? `${etaMinutes} min` : `${Math.ceil(etaMinutes / 60)}h ${etaMinutes % 60}min`;
-            label.textContent = `Scanning: ${scanData.current_file ? scanData.current_file.split('/').pop() : ''} - ~${etaText} remaining`;
-            bar.classList.replace('bg-amber-400', 'bg-indigo-500');
-          }
-        } else {
-          wrap.classList.add('hidden');
-        }
-      } catch (err) {
-        console.error("Failed parsing scan telemetry updates:", err);
-      }
-    }
-    setInterval(pollScanStatus, 2000);
-
-    async function togglePause() {
-      const action = isPaused ? 'resume' : 'pause';
-      const response = await fetch(`/api/scan/${action}`, { method: 'POST' });
-      if (response.ok) {
-        await pollScanStatus();
-      } else {
-        console.error(`Error requesting background scan run-state ${action}`);
-      }
-    }
-
     // Duplicate Modal Functions
     function escapeHtml(str) {
       const div = document.createElement('div');
@@ -784,7 +664,7 @@
       const content = document.getElementById('duplicate-content');
 
       content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Loading duplicates...</p></div>';
-      modal.classList.add('show');
+      modal.classList.replace('hidden', 'flex');
 
       try {
         const res = await fetch(`/api/duplicates/${mainId}`);
@@ -892,7 +772,7 @@
     }
 
     function closeDuplicateModal() {
-      document.getElementById('duplicate-modal').classList.remove('show');
+      document.getElementById('duplicate-modal').classList.replace('flex', 'hidden');
       currentModalId = null;
     }
 
@@ -960,7 +840,7 @@
       const content = document.getElementById('fuzzy-content');
 
       content.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div><p class="mt-2 text-gray-600">Searching for similar tracks...</p></div>';
-      modal.classList.add('show');
+      modal.classList.replace('hidden', 'flex');
 
       try {
         const res = await fetch(`/api/fuzzy-duplicates/${mainId}`);
@@ -1054,7 +934,7 @@
     }
 
     function closeFuzzyModal() {
-      document.getElementById('fuzzy-modal').classList.remove('show');
+      document.getElementById('fuzzy-modal').classList.replace('flex', 'hidden');
       currentModalId = null;
     }
 
@@ -1095,5 +975,4 @@
       }
     });
   </script>
-</body>
-</html>
+{% endblock %}

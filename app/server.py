@@ -416,6 +416,23 @@ def history():
         status_filter=status_filter,
     )
 
+def classify_log_level(line):
+    """Single source of truth for a log line's level - used for BOTH the
+    line's display color and its data-level (what the level filter
+    dropdown matches against). These used to be two separately-written
+    conditions in logs.html's template that didn't quite agree (e.g. a
+    line matching only "processing" got colored as info but filtered as
+    debug, so picking "Info Only" would hide it) - computed once here
+    instead, so display and filtering can never disagree."""
+    lower = line.lower()
+    if '[error]' in lower or 'failed' in lower or 'error' in lower:
+        return 'error'
+    if '[warn]' in lower or 'warning' in lower:
+        return 'warn'
+    if '[info]' in lower or 'queued' in lower or 'scanning' in lower or 'processing' in lower:
+        return 'info'
+    return 'debug'
+
 @app.route("/logs")
 def view_logs():
     log_dir = Path("/opt/music-intake/logs")
@@ -435,8 +452,9 @@ def view_logs():
         try:
             if path.exists():
                 with open(path, 'r') as f:
+                    lines = f.read().splitlines()[-500:]  # Last 500 lines
                     logs[name] = {
-                        'content': f.read().splitlines()[-500:],  # Last 500 lines
+                        'content': [{'text': line, 'level': classify_log_level(line)} for line in lines],
                         'path': str(path)
                     }
             else:
