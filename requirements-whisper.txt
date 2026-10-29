@@ -1,0 +1,3 @@
+# Optional dependencies for the Genius + Whisper fallback.
+-r requirements.txt
+faster-whisper
