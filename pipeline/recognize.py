@@ -39,6 +39,13 @@ from settings import get_settings
 
 socket.setdefaulttimeout(15)
 
+# AcoustID's public web service asks clients not to exceed 3 requests/second.
+# The scanner can run many files concurrently, so serialize request starts
+# and keep a small interval between them across all worker threads.
+_ACOUSTID_MIN_INTERVAL = 1.0 / 3.0
+_acoustid_rate_lock = threading.Lock()
+_acoustid_last_request = 0.0
+
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
 DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
@@ -269,6 +276,16 @@ def acoustid_lookup(filepath, api_key=None):
         logger.warning("ACOUSTID_API_KEY is not set - skipping lookup")
         return None, None, 0.0
     try:
+        # The public AcoustID service documents a maximum of 3 requests/sec.
+        # Worker concurrency must not bypass that limit.
+        global _acoustid_last_request
+        with _acoustid_rate_lock:
+            now = time.monotonic()
+            wait = _ACOUSTID_MIN_INTERVAL - (now - _acoustid_last_request)
+            if wait > 0:
+                time.sleep(wait)
+            _acoustid_last_request = time.monotonic()
+
         results = acoustid.match(api_key, str(filepath))
         for score, rid, title, artist in results:
             return artist, title, score
