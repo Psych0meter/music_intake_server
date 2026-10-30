@@ -460,9 +460,14 @@ def best_pair_match(candidates):
     """Finds the two detector candidates (songrec/acoustid/genius, each a
     (name, artist, title) tuple) whose artist+title agree most closely.
     Returns (avg_similarity, candidate_a, candidate_b) for the best-
-    agreeing pair if any two sources agree closely enough (>=0.6 average
+    agreeing pair if any two sources agree closely enough (>=0.9 average
     similarity) to trust their consensus, or None if no pair agrees that
-    well - see identify_and_tag()'s selection order below."""
+    well - see identify_and_tag()'s iTunes tie-break selection below.
+
+    The higher threshold is intentional: short, unrelated names can have
+    deceptively high SequenceMatcher scores (for example, "Artist A" and
+    "Artist B"). Missing fields are still ignored, so exact agreement on
+    the one available field can establish a partial-metadata match."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -472,7 +477,7 @@ def best_pair_match(candidates):
             if not sims:
                 continue
             avg = sum(sims) / len(sims)
-            if avg >= 0.6 and (best is None or avg > best[0]):
+            if avg >= 0.9 and (best is None or avg > best[0]):
                 best = (avg, candidates[i], candidates[j])
     return best
 
