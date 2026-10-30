@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
+import hmac
 import json
 import math
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_file
+from flask import Flask, abort, jsonify, render_template, request, send_file, session
 
 from settings import get_settings, update_settings, SETTINGS_SCHEMA, SECRET_KEYS
 
@@ -23,6 +25,68 @@ REJECTED = NAS_INTAKE / "rejected"
 QUARANTINE = NAS_INTAKE / ".quarantine"
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("MUSIC_INTAKE_SECRET_KEY")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("MUSIC_INTAKE_COOKIE_SECURE", "0").lower()
+    in {"1", "true", "yes"},
+)
+
+# --- Request security ---
+# The UI fails closed when its credentials or signing key are not configured.
+# HTTP Basic auth keeps this small single-operator service dependency-free;
+# session-bound CSRF tokens protect state-changing browser requests.
+_AUTH_USERNAME = os.environ.get("MUSIC_INTAKE_USERNAME", "")
+_AUTH_PASSWORD = os.environ.get("MUSIC_INTAKE_PASSWORD", "")
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.before_request
+def protect_review_ui():
+    if (
+        not _AUTH_USERNAME
+        or not _AUTH_PASSWORD
+        or not app.secret_key
+        or len(app.secret_key) < 32
+    ):
+        app.logger.error(
+            "Review UI unavailable: set MUSIC_INTAKE_USERNAME, "
+            "MUSIC_INTAKE_PASSWORD, and a 32+ character MUSIC_INTAKE_SECRET_KEY"
+        )
+        return jsonify({"error": "Review UI authentication is not configured"}), 503
+
+    auth = request.authorization
+    supplied_user = auth.username if auth and auth.username else ""
+    supplied_password = auth.password if auth and auth.password else ""
+    user_ok = hmac.compare_digest(supplied_user, _AUTH_USERNAME)
+    password_ok = hmac.compare_digest(supplied_password, _AUTH_PASSWORD)
+    if not auth or auth.type.lower() != "basic" or not (user_ok and password_ok):
+        response = jsonify({"error": "Authentication required"})
+        response.status_code = 401
+        response.headers["WWW-Authenticate"] = 'Basic realm="Music Intake", charset="UTF-8"'
+        return response
+
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+
+    if request.method in _UNSAFE_METHODS:
+        supplied_token = request.headers.get("X-CSRF-Token", "")
+        expected_token = session.get("csrf_token", "")
+        if not expected_token or not supplied_token or not hmac.compare_digest(
+            supplied_token, expected_token
+        ):
+            return jsonify({"error": "CSRF token missing or invalid"}), 403
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
+
 
 # --- Logging ---
 
@@ -931,4 +995,7 @@ def download_log(name):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Localhost by default; set MUSIC_INTAKE_HOST=0.0.0.0 only when the
+    # service must be reachable over the LAN and network access is restricted.
+    host = os.environ.get("MUSIC_INTAKE_HOST", "127.0.0.1")
+    app.run(host=host, port=int(os.environ.get("MUSIC_INTAKE_PORT", "5000")))

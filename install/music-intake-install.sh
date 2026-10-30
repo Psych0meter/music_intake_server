@@ -229,6 +229,7 @@ Requires=music-migrate.service
 [Service]
 Type=simple
 User=musicintake
+EnvironmentFile=/opt/music-intake/config/secrets.env
 WorkingDirectory=/opt/music-intake/app
 ExecStart=/opt/music-intake/venv/bin/python3 /opt/music-intake/app/server.py
 Restart=on-failure

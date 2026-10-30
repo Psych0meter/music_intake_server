@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ session.get('csrf_token', '') }}">
   <title>{% block title %}Music Intake{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -289,6 +290,24 @@
   </div>
 
   <script>
+    // Attach the session CSRF token to every same-origin state-changing fetch.
+    // This central wrapper covers review, history, settings, and log actions.
+    (() => {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const inputMethod = input instanceof Request ? input.method : "GET";
+        const method = String(init.method || inputMethod).toUpperCase();
+        const inputUrl = input instanceof Request ? input.url : String(input);
+        const url = new URL(inputUrl, window.location.href);
+        if (url.origin === window.location.origin && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+          const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+          headers.set("X-CSRF-Token", document.querySelector('meta[name="csrf-token"]')?.content || "");
+          init = { ...init, headers };
+        }
+        return nativeFetch(input, init);
+      };
+    })();
+
     // --- Global scan progress bar/pause toggle - shared by every page ---
     let isPaused = false;
 
