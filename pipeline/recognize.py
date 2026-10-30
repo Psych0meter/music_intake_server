@@ -682,7 +682,7 @@ def scan_loop(poll_seconds=15):
                 # can't spin up an unreasonable number of threads.
                 cycle_settings = get_settings(conn)
                 workers = cycle_settings.get("scan_workers") or SCAN_WORKERS
-                workers = max(1, min(workers, 64))
+                workers = max(1, min(workers, 32))
 
                 processed_count = 0
                 stopped_early = False

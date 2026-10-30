@@ -124,8 +124,8 @@
         <p class="text-sm text-inkmuted mt-0.5">How many files to identify concurrently. Picked up at the start of the next scan cycle - no restart needed.</p>
         <div class="mt-4 max-w-xs">
           <label class="block text-sm font-medium text-ink mb-1" for="scan_workers">Scan workers</label>
-          <input type="number" id="scan_workers" min="0" max="64" step="1" class="field-control">
-          <p class="text-xs text-inkmuted mt-1">0 = auto (min(8, CPU count)). Raise it if you have spare cores and a fast
+          <input type="number" id="scan_workers" min="0" max="32" step="1" class="field-control">
+          <p class="text-xs text-inkmuted mt-1">0 = auto (min(8, CPU count)); maximum 32. Raise it if you have spare cores and a fast
             connection to your source; lower it if you're hitting AcoustID/iTunes/Genius rate limits.</p>
         </div>
       </div>

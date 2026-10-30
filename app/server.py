@@ -911,24 +911,23 @@ def api_get_settings():
 
 @app.route("/api/settings", methods=["POST"])
 def api_update_settings():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
     updates = {}
-    for key in SETTINGS_SCHEMA:
-        if key not in data:
+    for key, value in data.items():
+        if key in SECRET_KEYS and isinstance(value, str) and value.strip() == "":
+            # Blank means keep the current secret; this endpoint cannot clear it.
             continue
-        value = data[key]
-        if key in SECRET_KEYS:
-            # Blank/whitespace-only means "keep the current value" - there's
-            # no way to explicitly clear a key from this endpoint (disable
-            # the detector instead if you don't want it used).
-            if isinstance(value, str) and value.strip() == "":
-                continue
         updates[key] = value
 
     conn = get_db()
     try:
         written = update_settings(conn, updates)
         values = get_settings(conn)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     finally:
         conn.close()
 
