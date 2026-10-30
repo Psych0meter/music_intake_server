@@ -29,7 +29,17 @@ source /opt/music-intake/venv/bin/activate
 if [ -f /opt/music-intake/config/secrets.env ]; then
   set -a
   # shellcheck disable=SC1091
+  # Preserve explicitly supplied environment overrides while loading config.
+  _scan_workers_was_set=${SCAN_WORKERS+x}
+  _scan_workers_override=${SCAN_WORKERS-}
+
   source /opt/music-intake/config/secrets.env
+
+  if [[ -n "$_scan_workers_was_set" ]]; then
+      export SCAN_WORKERS="$_scan_workers_override"
+  fi
+
+  unset _scan_workers_was_set _scan_workers_override
   set +a
 fi
 
@@ -103,8 +113,22 @@ print("\n=================================================="
 
 conn = r.sqlite3.connect(":memory:")
 conn.row_factory = r.sqlite3.Row
-conn.executescript(r.SCHEMA)
-r.migrate_schema(conn)
+
+# Build the test schema from the same SQL migrations as the application.
+migrations_dir = Path("/workspaces/music_intake_server/migrations")
+conn.execute(
+    "CREATE TABLE IF NOT EXISTS schema_version ("
+    "version TEXT PRIMARY KEY, "
+    "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+for migration in sorted(migrations_dir.glob("*.sql")):
+    conn.executescript(migration.read_text())
+    conn.execute(
+        "INSERT INTO schema_version (version) VALUES (?)",
+        (migration.stem,),
+    )
+    conn.commit()
 
 start = time.perf_counter()
 r.process_file(conn, track)

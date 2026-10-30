@@ -94,7 +94,13 @@ def _default_settings():
 # with available cores (capped at 8 so a big box doesn't hammer AcoustID/
 # iTunes/Genius or a network NAS mount too hard); override via
 # SCAN_WORKERS in config/secrets.env.
-SCAN_WORKERS = max(1, int(os.environ.get("SCAN_WORKERS", str(min(8, os.cpu_count() or 4)))))
+_default_workers = min(8, os.cpu_count() or 4)
+_scan_workers_env = os.environ.get("SCAN_WORKERS", "").strip()
+
+try:
+    SCAN_WORKERS = max(1, int(_scan_workers_env)) if _scan_workers_env else _default_workers
+except ValueError:
+    SCAN_WORKERS = _default_workers
 
 # Shared connection-pooled session for the iTunes/Genius HTTP calls,
 # instead of opening a fresh connection per call. requests.Session is
@@ -296,7 +302,14 @@ def acoustid_lookup(filepath, api_key=None):
     except acoustid.FingerprintGenerationError as e:
         logger.error(f"Fingerprinting failed for {filepath}: {e}")
     except acoustid.WebServiceError as e:
-        logger.error(f"AcoustID API error for {filepath}: {e}")
+        error_code = getattr(e, "code", "unknown")
+        error_message = getattr(e, "message", str(e))
+        logger.error(
+            "AcoustID API error for %s: code=%s message=%s",
+            filepath.name,
+            error_code,
+            error_message,
+        )
     except Exception as e:
         logger.error(f"AcoustID failed for {filepath}: {e}")
     return None, None, 0.0
