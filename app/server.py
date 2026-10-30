@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import json
 import math
 import os
 import re
 import shutil
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
@@ -18,6 +20,7 @@ DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"
 NAS_INTAKE = Path("/mnt/nas-intake")
 APPROVED = NAS_INTAKE / "approved"
 REJECTED = NAS_INTAKE / "rejected"
+QUARANTINE = NAS_INTAKE / ".quarantine"
 
 app = Flask(__name__)
 
@@ -73,7 +76,41 @@ def load_scan_roots():
     return roots
 
 def allowed_roots():
+    """Directories the app is permitted to serve or manage files in."""
     return load_scan_roots() + [APPROVED.resolve(), REJECTED.resolve()]
+
+
+def _path_is_within(path, roots):
+    """Return True only when a resolved path is equal to or below a root."""
+    path = Path(path).resolve()
+    for root in roots:
+        try:
+            path.relative_to(Path(root).resolve())
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _managed_file(filepath, roots=None):
+    """Resolve and validate a regular managed file before touching it.
+
+    Reject symlinks at the leaf to avoid moving/deleting a link when its
+    target may be outside the configured music directories.
+    """
+    candidate = Path(filepath)
+    if candidate.is_symlink():
+        raise ValueError("Symbolic links cannot be moved or deleted")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("File does not exist or cannot be resolved") from exc
+    if not resolved.is_file():
+        raise ValueError("Path is not a regular file")
+    roots = allowed_roots() if roots is None else roots
+    if not _path_is_within(resolved, roots):
+        raise ValueError("File is outside configured music directories")
+    return resolved
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -139,7 +176,10 @@ def _approve_one(conn, item_id):
     artist = sanitize_filename(row["artist"]) or "Unknown Artist"
     album = sanitize_filename(row["album"]) or "Unknown Album"
     title = sanitize_filename(row["title"]) or "Unknown Title"
-    src = Path(row["filepath"])
+    try:
+        src = _managed_file(row["filepath"], load_scan_roots())
+    except ValueError as e:
+        return False, str(e)
     extension = src.suffix
     dest_dir = APPROVED / artist / album
     try:
@@ -156,8 +196,9 @@ def _reject_one(conn, item_id):
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
         return False, "not found"
-    src = Path(row["filepath"])
     try:
+        src = _managed_file(row["filepath"], load_scan_roots())
+        REJECTED.mkdir(parents=True, exist_ok=True)
         dest = _unique_dest(REJECTED / src.name)
         shutil.move(str(src), str(dest))
     except Exception as e:
@@ -175,28 +216,97 @@ def _rescan_one(conn, item_id):
     return True, None
 
 def _delete_one(conn, item_id):
-    """Delete a single item from disk and database."""
+    """Quarantine a queue item so deletion can be undone safely."""
     row = conn.execute("SELECT * FROM queue WHERE id = ?", (item_id,)).fetchone()
     if not row:
         return False, "not found"
     try:
-        src = Path(row["filepath"])
-        if src.exists():
-            src.unlink()
+        src = _managed_file(row["filepath"])
+        QUARANTINE.mkdir(parents=True, exist_ok=True)
+        quarantine_id = f"{int(item_id)}-{time.time_ns()}"
+        quarantine_dir = QUARANTINE / quarantine_id
+        quarantine_dir.mkdir(parents=False, exist_ok=False)
+        quarantined = quarantine_dir / src.name
+        try:
+            shutil.move(str(src), str(quarantined))
+            conn.execute(
+                "INSERT INTO file_quarantine "
+                "(queue_id, original_filepath, quarantine_filepath, queue_data) "
+                "VALUES (?, ?, ?, ?)",
+                (int(item_id), str(src), str(quarantined), json.dumps(dict(row))),
+            )
+            conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            if quarantined.exists() and not src.exists():
+                src.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(quarantined), str(src))
+            try:
+                quarantine_dir.rmdir()
+            except OSError:
+                pass
+            raise
     except Exception as e:
-        return False, f"Failed to delete file: {e!s}"
-    conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
-    conn.commit()
-    return True, None
+        return False, f"Failed to quarantine file: {e!s}"
+    return True, {"quarantine_id": quarantine_id}
+
+
+def _restore_quarantined(conn, quarantine_id):
+    """Restore a quarantined file and its queue metadata without overwriting."""
+    record = conn.execute(
+        "SELECT * FROM file_quarantine WHERE id = ?", (quarantine_id,)
+    ).fetchone()
+    if not record:
+        return False, "quarantine item not found"
+
+    try:
+        quarantined = _managed_file(record["quarantine_filepath"], [QUARANTINE.resolve()])
+        original = Path(record["original_filepath"])
+        original_parent = original.parent.resolve()
+        if not _path_is_within(original_parent, allowed_roots()):
+            raise ValueError("Original path is outside configured music directories")
+        original_parent.mkdir(parents=True, exist_ok=True)
+        destination = _unique_dest(original_parent / original.name)
+        shutil.move(str(quarantined), str(destination))
+        try:
+            data = json.loads(record["queue_data"])
+            data.pop("id", None)
+            data["filepath"] = str(destination)
+            columns = {r[1] for r in conn.execute("PRAGMA table_info(queue)")}
+            data = {key: value for key, value in data.items() if key in columns}
+            names = list(data)
+            placeholders = ", ".join("?" for _ in names)
+            conn.execute(
+                f"INSERT INTO queue ({', '.join(names)}) VALUES ({placeholders})",
+                [data[name] for name in names],
+            )
+            conn.execute("DELETE FROM file_quarantine WHERE id = ?", (quarantine_id,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            if destination.exists() and not quarantined.exists():
+                quarantined.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(destination), str(quarantined))
+            raise
+        try:
+            quarantined.parent.rmdir()
+        except OSError:
+            pass
+    except Exception as e:
+        return False, f"Failed to restore quarantined file: {e!s}"
+    return True, {"filepath": str(destination)}
 
 def _run_batch(conn, ids, fn):
     results = {}
     for item_id in ids:
         try:
-            ok, err = fn(conn, int(item_id))
+            ok, detail = fn(conn, int(item_id))
         except (TypeError, ValueError):
-            ok, err = False, "invalid id"
-        results[item_id] = {"ok": ok, "error": err}
+            ok, detail = False, "invalid id"
+        results[item_id] = {"ok": ok, "error": None if ok else detail}
+        if ok and isinstance(detail, dict):
+            results[item_id]["result"] = detail
     return results
 
 # --- Routes ---
@@ -510,10 +620,9 @@ def audio(item_id):
     conn.close()
     if not row or row["error"]:
         abort(404)
-    src = Path(row["filepath"]).resolve()
-    if not any(root in src.parents or root == src for root in allowed_roots()):
-        abort(403)
-    if not src.is_file():
+    try:
+        src = _managed_file(row["filepath"])
+    except ValueError:
         abort(404)
     return send_file(src, conditional=True)
 
@@ -544,8 +653,28 @@ def delete_item(item_id):
     ok, err = _delete_one(conn, item_id)
     conn.close()
     if not ok:
-        return jsonify({"error": err}), 404 if err == "not found" else 500
-    return jsonify({"status": "deleted"})
+        return jsonify({"error": err}), 404 if err == "not found" else 400
+    return jsonify({"status": "quarantined", **(err or {})})
+
+@app.route("/api/quarantine", methods=["GET"])
+def list_quarantined_items():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, queue_id, original_filepath, quarantined_at "
+        "FROM file_quarantine ORDER BY quarantined_at DESC, id DESC"
+    ).fetchall()
+    conn.close()
+    return jsonify({"items": [dict(row) for row in rows]})
+
+@app.route("/api/quarantine/<int:quarantine_id>/restore", methods=["POST"])
+def restore_quarantined_item(quarantine_id):
+    conn = get_db()
+    ok, detail = _restore_quarantined(conn, quarantine_id)
+    conn.close()
+    if not ok:
+        status = 404 if "not found" in detail else 400
+        return jsonify({"error": detail}), status
+    return jsonify({"status": "restored", **detail})
 
 @app.route("/api/delete-batch", methods=["POST"])
 def delete_batch():

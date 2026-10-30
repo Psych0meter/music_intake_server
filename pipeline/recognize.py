@@ -166,7 +166,9 @@ def discover_files():
         try:
             files.extend(
                 f for f in root.rglob("*")
-                if f.is_file() and f.suffix.lower() in SUPPORTED_EXT
+                if ".quarantine" not in f.parts
+                and f.is_file()
+                and f.suffix.lower() in SUPPORTED_EXT
             )
         except Exception as e:
             logger.error(f"Error scanning {root}: {e}")
