@@ -14,6 +14,8 @@ network_check
 update_os
 
 
+# The engine forwards COMMUNITY_SCRIPTS_URL (.../<repo>/<branch>), not BRANCH.
+BRANCH="${BRANCH:-${COMMUNITY_SCRIPTS_URL##*/}}"
 BRANCH="${BRANCH:-main}"
 
 

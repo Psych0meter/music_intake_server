@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
-
 # Copyright (c) 2021-2026 Psych0meter
 # Author: Psych0meter
 # License: MIT
@@ -18,7 +16,18 @@ source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxV
 USER_BRANCH="${BRANCH}"
 BRANCH="${BRANCH:-main}"
 REPO="https://github.com/Psych0meter/music_intake_server"
-INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/Psych0meter/music_intake_server/${BRANCH}/install/music-intake-install.sh"
+
+# ---------------------------------------------------------------------------
+# community-scripts engine bootstrap.
+#
+# The engine moved out of community-scripts/ProxmoxVE (misc/build.func is
+# gone - 404) into community-scripts/core (core/build.func). It resolves the
+# install script as ${COMMUNITY_SCRIPTS_URL}/install/<app>-install.sh, so
+# point that at THIS repo/branch instead of the upstream default.
+# ---------------------------------------------------------------------------
+export COMMUNITY_SCRIPTS_URL="${COMMUNITY_SCRIPTS_URL:-https://raw.githubusercontent.com/Psych0meter/music_intake_server/${BRANCH}}"
+_cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
+source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 
 APP="Music-Intake"
 
@@ -51,15 +60,15 @@ function update_script() {
   $STD apt-get -o Dpkg::Options::="--force-confold" -y dist-upgrade
   msg_ok "Updated Container OS"
 
-  msg_info "Stopping Services"
-  systemctl stop music-recognize.service
-  systemctl stop music-review-ui.service
-  msg_ok "Stopped Services"
-
   if [[ ! -d /opt/music-intake-src/.git ]]; then
     msg_error "Source checkout missing"
     exit
   fi
+
+  msg_info "Stopping Services"
+  systemctl stop music-recognize.service
+  systemctl stop music-review-ui.service
+  msg_ok "Stopped Services"
 
   msg_info "Updating ${APP} Source"
   cd /opt/music-intake-src
@@ -67,8 +76,6 @@ function update_script() {
   # Resolve target branch: Prioritize explicit env variable, then fall back to tracking file
   if [[ -n "${USER_BRANCH}" ]]; then
     TARGET_BRANCH="${USER_BRANCH}"
-    # Persist the target branch back to the version file so future automated runs stay on it
-    echo "${TARGET_BRANCH}" > /opt/music-intake_version.txt
   else
     TARGET_BRANCH=$(cat /opt/music-intake_version.txt 2>/dev/null | cut -d'@' -f1)
     TARGET_BRANCH="${TARGET_BRANCH:-main}"
@@ -80,13 +87,16 @@ function update_script() {
     git checkout "${TARGET_BRANCH}"
     git reset --hard "origin/${TARGET_BRANCH}"
   else
-    msg_warn "Target branch ${TARGET_BRANCH} no longer exists, switching to main"
+    echo -e "${YW}Target branch ${TARGET_BRANCH} no longer exists, switching to main${CL}"
     git checkout main
     git reset --hard origin/main
     TARGET_BRANCH="main"
-    echo "main" > /opt/music-intake_version.txt
   fi
-  msg_ok "Updated source (branch: ${TARGET_BRANCH})"
+  DEPLOYED_REV="$(git rev-parse --short HEAD)"
+  # Same "<branch>@<sha>" format the installer writes, so the deployed commit
+  # can always be checked with: cat /opt/music-intake_version.txt
+  echo "${TARGET_BRANCH}@${DEPLOYED_REV}" > /opt/music-intake_version.txt
+  msg_ok "Updated source (${TARGET_BRANCH}@${DEPLOYED_REV})"
 
   msg_info "Deploying Application Files"
   rm -rf /opt/music-intake/app/*
@@ -97,6 +107,16 @@ function update_script() {
   cp -r pipeline/* /opt/music-intake/pipeline/
   cp -r migrations/* /opt/music-intake/migrations/
   cp migrate.py /opt/music-intake/migrate.py
+
+  # beets-config.yaml is read fresh by pipeline/import_approved.sh on every
+  # run, so it MUST be redeployed or config fixes (e.g. the incremental /
+  # duplicate_action fix) never reach the container. It holds no secrets
+  # (the AcoustID key comes from secrets.env), so overwrite - keeping a backup.
+  if ! cmp -s config/beets-config.yaml /opt/music-intake/config/beets-config.yaml; then
+    cp -a /opt/music-intake/config/beets-config.yaml /opt/music-intake/config/beets-config.yaml.bak 2>/dev/null || true
+    cp config/beets-config.yaml /opt/music-intake/config/beets-config.yaml
+  fi
+  chmod +x /opt/music-intake/pipeline/import_approved.sh
 
   # Refresh systemd configuration files if changes were tracked in the repo
   if [ -d "services" ]; then
@@ -126,18 +146,8 @@ start
 build_container
 
 
-# ---------------------------------------------------------------------------
-# Run install script inside container.
-# Uses lxc-attach because build_container already created the CT.
-# ---------------------------------------------------------------------------
-
-msg_info "Running ${APP} Install Script (branch: ${BRANCH})"
-
-curl -fsSL "$INSTALL_SCRIPT_URL" | BRANCH="${BRANCH}" FUNCTIONS_FILE_PATH="${FUNCTIONS_FILE_PATH}" lxc-attach -n "$CTID" -- bash
-
-msg_ok "Install Script Completed"
-
-
+# The engine fetches ${COMMUNITY_SCRIPTS_URL}/install/music-intake-install.sh
+# and runs it inside the new container itself - no manual lxc-attach needed.
 description
 
 
