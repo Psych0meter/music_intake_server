@@ -55,6 +55,24 @@ read from this file):
 systemctl restart music-recognize.service
 ```
 
+
+## Review UI security
+
+The review UI requires HTTP Basic authentication and a Flask session-signing key. Add these variables to `/opt/music-intake/config/secrets.env` before restarting `music-review-ui.service`:
+
+```sh
+MUSIC_INTAKE_USERNAME=admin
+MUSIC_INTAKE_PASSWORD=<long-random-password>
+MUSIC_INTAKE_SECRET_KEY=<at-least-32-characters-of-random-data>
+MUSIC_INTAKE_COOKIE_SECURE=0
+```
+
+Generate values rather than using the placeholders, for example with `openssl rand -hex 32`. Keep the secrets file mode `600` and owned by `musicintake`. The service returns HTTP 503 until the username, password, and a signing key of at least 32 characters are configured; it does not silently run without authentication. Existing installations must add these settings manually because their secrets file is not overwritten during upgrades. Their existing `music-review-ui.service` unit may also lack an `EnvironmentFile` line: add `EnvironmentFile=/opt/music-intake/config/secrets.env` under `[Service]` in `/etc/systemd/system/music-review-ui.service`, then run `systemctl daemon-reload` before restarting the service.
+
+The UI binds to `127.0.0.1:5000` by default. For remote access, prefer a VPN or an HTTPS reverse proxy. If direct LAN access is necessary, set `MUSIC_INTAKE_HOST=0.0.0.0` and restrict inbound access with the host/container firewall. Set `MUSIC_INTAKE_COOKIE_SECURE=1` only when HTTPS is used end-to-end to the Flask app; otherwise the browser will not send the session cookie over plain HTTP.
+
+All state-changing requests require a session CSRF token, which the UI adds automatically. Third-party cross-origin requests cannot read the token. The app also sends basic clickjacking, MIME-sniffing, and referrer-policy headers. Do not expose this development Flask server directly to the public internet.
+
 ## Settings (Settings page)
 
 `/settings` in the web UI - enable/disable each detector (SongRec,

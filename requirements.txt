@@ -4,4 +4,3 @@ requests
 flask
 mutagen
 beautifulsoup4
-faster-whisper

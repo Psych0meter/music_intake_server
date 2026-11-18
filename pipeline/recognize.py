@@ -39,6 +39,13 @@ from settings import get_settings
 
 socket.setdefaulttimeout(15)
 
+# AcoustID's public web service asks clients not to exceed 3 requests/second.
+# The scanner can run many files concurrently, so serialize request starts
+# and keep a small interval between them across all worker threads.
+_ACOUSTID_MIN_INTERVAL = 1.0 / 3.0
+_acoustid_rate_lock = threading.Lock()
+_acoustid_last_request = 0.0
+
 APP_ROOT = Path("/opt/music-intake")
 SCAN_ROOTS_FILE = APP_ROOT / "config" / "scan_roots.txt"
 DB_PATH = Path(os.environ.get("MUSIC_DB_PATH", APP_ROOT / "db" / "queue.sqlite3"))
@@ -87,7 +94,13 @@ def _default_settings():
 # with available cores (capped at 8 so a big box doesn't hammer AcoustID/
 # iTunes/Genius or a network NAS mount too hard); override via
 # SCAN_WORKERS in config/secrets.env.
-SCAN_WORKERS = max(1, int(os.environ.get("SCAN_WORKERS", str(min(8, os.cpu_count() or 4)))))
+_default_workers = min(8, os.cpu_count() or 4)
+_scan_workers_env = os.environ.get("SCAN_WORKERS", "").strip()
+
+try:
+    SCAN_WORKERS = max(1, int(_scan_workers_env)) if _scan_workers_env else _default_workers
+except ValueError:
+    SCAN_WORKERS = _default_workers
 
 # Shared connection-pooled session for the iTunes/Genius HTTP calls,
 # instead of opening a fresh connection per call. requests.Session is
@@ -159,7 +172,9 @@ def discover_files():
         try:
             files.extend(
                 f for f in root.rglob("*")
-                if f.is_file() and f.suffix.lower() in SUPPORTED_EXT
+                if ".quarantine" not in f.parts
+                and f.is_file()
+                and f.suffix.lower() in SUPPORTED_EXT
             )
         except Exception as e:
             logger.error(f"Error scanning {root}: {e}")
@@ -269,6 +284,16 @@ def acoustid_lookup(filepath, api_key=None):
         logger.warning("ACOUSTID_API_KEY is not set - skipping lookup")
         return None, None, 0.0
     try:
+        # The public AcoustID service documents a maximum of 3 requests/sec.
+        # Worker concurrency must not bypass that limit.
+        global _acoustid_last_request
+        with _acoustid_rate_lock:
+            now = time.monotonic()
+            wait = _ACOUSTID_MIN_INTERVAL - (now - _acoustid_last_request)
+            if wait > 0:
+                time.sleep(wait)
+            _acoustid_last_request = time.monotonic()
+
         results = acoustid.match(api_key, str(filepath))
         for score, rid, title, artist in results:
             return artist, title, score
@@ -277,7 +302,14 @@ def acoustid_lookup(filepath, api_key=None):
     except acoustid.FingerprintGenerationError as e:
         logger.error(f"Fingerprinting failed for {filepath}: {e}")
     except acoustid.WebServiceError as e:
-        logger.error(f"AcoustID API error for {filepath}: {e}")
+        error_code = getattr(e, "code", "unknown")
+        error_message = getattr(e, "message", str(e))
+        logger.error(
+            "AcoustID API error for %s: code=%s message=%s",
+            filepath.name,
+            error_code,
+            error_message,
+        )
     except Exception as e:
         logger.error(f"AcoustID failed for {filepath}: {e}")
     return None, None, 0.0
@@ -441,9 +473,14 @@ def best_pair_match(candidates):
     """Finds the two detector candidates (songrec/acoustid/genius, each a
     (name, artist, title) tuple) whose artist+title agree most closely.
     Returns (avg_similarity, candidate_a, candidate_b) for the best-
-    agreeing pair if any two sources agree closely enough (>=0.6 average
+    agreeing pair if any two sources agree closely enough (>=0.9 average
     similarity) to trust their consensus, or None if no pair agrees that
-    well - see identify_and_tag()'s selection order below."""
+    well - see identify_and_tag()'s iTunes tie-break selection below.
+
+    The higher threshold is intentional: short, unrelated names can have
+    deceptively high SequenceMatcher scores (for example, "Artist A" and
+    "Artist B"). Missing fields are still ignored, so exact agreement on
+    the one available field can establish a partial-metadata match."""
     best = None
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
@@ -453,7 +490,7 @@ def best_pair_match(candidates):
             if not sims:
                 continue
             avg = sum(sims) / len(sims)
-            if avg >= 0.6 and (best is None or avg > best[0]):
+            if avg >= 0.9 and (best is None or avg > best[0]):
                 best = (avg, candidates[i], candidates[j])
     return best
 
@@ -663,7 +700,7 @@ def scan_loop(poll_seconds=15):
                 # can't spin up an unreasonable number of threads.
                 cycle_settings = get_settings(conn)
                 workers = cycle_settings.get("scan_workers") or SCAN_WORKERS
-                workers = max(1, min(workers, 64))
+                workers = max(1, min(workers, 32))
 
                 processed_count = 0
                 stopped_early = False

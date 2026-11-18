@@ -35,6 +35,25 @@
       </div>
     </div>
 
+    <section class="bg-surface border border-line rounded-xl shadow-sm p-4 mb-6" aria-labelledby="quarantine-heading">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div>
+          <h2 id="quarantine-heading" class="text-lg font-semibold text-ink">Recently deleted</h2>
+          <p class="text-sm text-inkmuted">Deleted tracks are kept in quarantine until restored or cleaned up by an administrator.</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="loadQuarantine()">Refresh</button>
+      </div>
+      <p id="quarantine-status" class="text-sm text-inkmuted" role="status" aria-live="polite">Loading quarantine…</p>
+      <div class="table-scroll">
+        <table class="w-full table-auto text-left border-collapse" id="quarantine-table" hidden>
+          <thead class="bg-surfacealt text-xs font-semibold uppercase tracking-wider text-inkmuted">
+            <tr><th class="px-3 py-2">File</th><th class="px-3 py-2">Deleted</th><th class="px-3 py-2 text-right">Action</th></tr>
+          </thead>
+          <tbody id="quarantine-rows" class="divide-y divide-surfacealt"></tbody>
+        </table>
+      </div>
+    </section>
+
     <div class="bg-surface border border-line rounded-xl shadow-sm overflow-visible">
       <div class="table-scroll">
         <table class="w-full table-auto text-left border-collapse">
@@ -154,13 +173,14 @@
     }
 
     async function deleteTrack(id, filename) {
-      if (!confirm(`Delete "${filename}"?\n\nThis will permanently remove the file from disk!`)) return;
+      if (!confirm(`Move "${filename}" to quarantine? You can restore it from the Recently deleted section.`)) return;
       const res = await fetch(`/api/delete/${id}`, { method: 'POST' });
       if (res.ok) {
         const row = document.getElementById(`hrow-${id}`);
         if (row) row.remove();
         selectedIds.delete(id);
         syncCheckboxStates();
+        await loadQuarantine();
         
         if (document.querySelectorAll('.item-row').length === 0) {
           window.location.reload();
@@ -174,7 +194,7 @@
     async function bulkDeleteHistory() {
       if (selectedIds.size === 0) return;
       
-      if (!confirm(`Delete ${selectedIds.size} selected track(s)?\n\nThis will permanently remove files from disk!`)) return;
+      if (!confirm(`Move ${selectedIds.size} selected track(s) to quarantine? They can be restored from Recently deleted.`)) return;
       
       const ids = Array.from(selectedIds);
       const res = await fetch('/api/delete-batch', {
@@ -183,13 +203,71 @@
         body: JSON.stringify({ ids: ids })
       });
       
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok || res.status === 207) {
+        const results = Object.values(data.results || {});
+        const succeeded = results.filter(item => item.ok).length;
+        const failed = results.length - succeeded;
+        alert(`Moved ${succeeded} track(s) to quarantine${failed ? `; ${failed} failed` : ''}.`);
         window.location.reload();
       } else {
-        const data = await res.json();
-        alert(data.error || `Failed to delete some tracks`);
+        alert(data.error || 'Failed to quarantine selected tracks');
       }
     }
+
+    async function loadQuarantine() {
+      const status = document.getElementById('quarantine-status');
+      const table = document.getElementById('quarantine-table');
+      const body = document.getElementById('quarantine-rows');
+      status.textContent = 'Loading quarantine…';
+      try {
+        const response = await fetch('/api/quarantine');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        body.replaceChildren();
+        for (const item of (data.items || [])) {
+          const tr = document.createElement('tr');
+          const fileCell = document.createElement('td');
+          fileCell.className = 'px-3 py-3 text-sm text-ink break-all';
+          fileCell.textContent = String(item.original_filepath || '').split(/[\\/]/).pop() || 'Unknown file';
+          const dateCell = document.createElement('td');
+          dateCell.className = 'px-3 py-3 text-sm text-inkmuted';
+          dateCell.textContent = item.quarantined_at || 'Unknown date';
+          const actionCell = document.createElement('td');
+          actionCell.className = 'px-3 py-3 text-right';
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn-primary btn-xs';
+          button.textContent = 'Restore';
+          button.addEventListener('click', () => restoreQuarantined(item.id, button));
+          actionCell.append(button);
+          tr.append(fileCell, dateCell, actionCell);
+          body.append(tr);
+        }
+        table.hidden = !(data.items || []).length;
+        status.textContent = data.items?.length ? `${data.items.length} quarantined track(s).` : 'No quarantined tracks.';
+      } catch (error) {
+        table.hidden = true;
+        status.textContent = `Could not load quarantine: ${error.message}`;
+      }
+    }
+
+    async function restoreQuarantined(id, button) {
+      if (!confirm('Restore this track to its original folder? If that filename already exists, a numbered filename will be used.')) return;
+      button.disabled = true;
+      try {
+        const response = await fetch(`/api/quarantine/${id}/restore`, { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        await loadQuarantine();
+        alert('Track restored successfully.');
+      } catch (error) {
+        alert(`Restore failed: ${error.message}`);
+        button.disabled = false;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadQuarantine);
 
     function exportHistory() {
       const rows = document.querySelectorAll('tbody tr');
